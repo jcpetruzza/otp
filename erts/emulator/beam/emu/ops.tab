@@ -95,7 +95,8 @@ move S X0=x==0 | line Loc => line Loc | move S X0
 line n => _
 line I
 
-executable_line Id Line => _
+executable_line2 Line CoverId XRegs => executable_line Line CoverId
+executable_line Line CoverId => _
 
 # For the JIT, the init_yregs/1 instruction allows generation of better code.
 # For the BEAM interpreter, though, it will probably be more efficient to
@@ -1598,4 +1599,3 @@ i_update_record_in_place t xy xy t s
 i_update_record_continue t s
 
 i_update_record_in_place_done
-

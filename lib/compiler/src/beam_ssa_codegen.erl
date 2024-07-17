@@ -689,6 +689,7 @@ need_live_anno(Op) ->
         bs_start_match -> true;
         bs_skip -> true;
         call -> true;
+        executable_line -> true;
         put_map -> true;
         update_record -> true;
         _ -> false
@@ -1819,9 +1820,18 @@ cg_instr(bs_get_tail, [Src], Dst, Set) ->
 cg_instr(bs_get_position, [Ctx], Dst, Set) ->
     Live = get_live(Set),
     [{bs_get_position,Ctx,Dst,Live}];
-cg_instr(executable_line, [{integer,Index}], _Dst, #cg_set{anno=Anno}) ->
+cg_instr(executable_line, [{integer,Index}], _Dst, #cg_set{anno=Anno}=Set) ->
     {line,Location} = line(Anno),
-    [{executable_line,Location,Index}];
+    Live = get_live(Set),
+    % TODO: Use a bitset internally to account for gaps, here we use
+    XRegsInfo = case Live of
+        _ when Live =< 31 ->
+            Bitset = (1 bsl Live) - 1,
+            encode_xreg_info({bitset, Bitset});
+        _ ->
+            encode_xreg_info({consecutive, Live})
+    end,
+    [{executable_line2,Location,Index,XRegsInfo}];
 cg_instr(put_map, [{atom,assoc},SrcMap|Ss], Dst, Set) ->
     Live = get_live(Set),
     [{put_map_assoc,{f,0},SrcMap,Dst,Live,{list,Ss}}];
@@ -2518,6 +2528,12 @@ line(#{location:={File,Line}}) ->
     {line,[{location,File,Line}]};
 line(#{}) ->
     {line,[]}.
+
+encode_xreg_info({bitset, Bitset}) when Bitset < (1 bsl 31)->
+    % MSB set means 31-bit bitset
+    Bitset bor (1 bsl 31);
+encode_xreg_info({consecutive, Count}) when 0 =< Count, Count =< 1024 ->
+    Count.
 
 flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),

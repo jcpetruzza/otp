@@ -365,9 +365,9 @@ make_op({'%',_}, Dict) ->
 make_op({line=Op,Location}, Dict0) ->
     {Index,Dict} = beam_dict:line(Location, Dict0, Op),
     encode_op(line, [Index], Dict);
-make_op({executable_line=Op,Location,Index}, Dict0) ->
-    {LocationIndex,Dict} = beam_dict:line(Location, Dict0, Op),
-    encode_op(executable_line, [LocationIndex,Index], Dict);
+make_op({executable_line2,Location,Index,XRegsInfo}, Dict0) ->
+    {LocationIndex,Dict} = beam_dict:line(Location, Dict0, executable_line),
+    encode_op(executable_line2, [LocationIndex,Index, XRegsInfo], Dict);
 make_op({bif, Bif, {f,_}, [], Dest}, Dict) ->
     %% BIFs without arguments cannot fail.
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
@@ -523,7 +523,7 @@ flag_to_bit(unsigned)-> 16#00;
 %%flag_to_bit(exact)   -> 16#08;
 flag_to_bit(native)  -> 16#10;
 flag_to_bit({anno,_}) -> 0.
-    
+
 encode_list([H|T], Dict0, Acc) when not is_list(H) ->
     {Enc,Dict} = encode_arg(H, Dict0),
     encode_list(T, Dict, [Acc,Enc]);

@@ -86,6 +86,7 @@ func_line I
 line n => _
 line I
 
+executable_line2 Line CoverId XRegs => executable_line Line CoverId
 executable_line I I
 
 allocate t t
