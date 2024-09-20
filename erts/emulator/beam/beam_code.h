@@ -105,6 +105,11 @@ typedef struct beam_code_header {
      * the index in each `debug_line` instruction.
      */
     const BeamDebugTab *debug;
+
+    /*
+     * Debugging instrumentation to use while loading the module
+     */
+    Uint debugger_flags;
 #endif
 
     /*

@@ -29,6 +29,7 @@
 #include "beam_load.h"
 #include "erl_version.h"
 #include "beam_bp.h"
+#include "erl_debugger.h"
 
 #include "beam_asm.h"
 
@@ -68,6 +69,7 @@ int beam_load_prepare_emit(LoaderState *stp) {
     hdr->literal_area = NULL;
     hdr->md5_ptr = NULL;
     hdr->are_nifs = NULL;
+    hdr->debugger_flags = erts_debugger_flags;
 
     stp->coverage = hdr->coverage = NULL;
     stp->line_coverage_valid = hdr->line_coverage_valid = NULL;
@@ -705,7 +707,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         }
         break;
     }
-    case op_debug_line_IIt:
+    case op_i_debug_line_It:
         /* We'll save some memory by not inserting a debug_line entry that
          * is equal to the previous one. */
         if (add_line_entry(stp, tmp_op->a[0].val, 0)) {
