@@ -38,6 +38,8 @@
 #define LOC_FILE(Loc) ((Loc) >> 24)
 #define LOC_LINE(Loc) ((Loc) & ((1 << 24)-1))
 
+#define LINE_UNKNOWN_LIVE_XREGS ((Uint16) -1)
+
 /* Minimum size for NIFs and SNIFs, in words. */
 #ifdef BEAMASM
 #  define BEAM_NATIVE_MIN_FUNC_SZ 30
@@ -145,6 +147,7 @@ struct BeamCodeLineTab_ {
         Uint16* p2;
         Uint32* p4;
     } loc_tab;
+    const Uint16* live_xregs;
     const void** func_tab[1];
 };
 
