@@ -56,6 +56,10 @@ extern void check_allocated_block(Uint type, void *blk);
 #define CHKBLK(TYPE,BLK) /* nothing */
 #endif
 
+#define INSTRUMENTS_LINE_BREAKPOINTS(stp) \
+    ERTS_DEBUGGER_IS_ENABLED_IN(stp->code_hdr->debugger_flags, \
+                                ERTS_DEBUGGER_LINE_BREAKPOINTS)
+
 static void init_label(Label* lp);
 
 int beam_load_prepare_emit(LoaderState *stp) {
@@ -269,6 +273,11 @@ int beam_load_finish_emit(LoaderState *stp) {
 
         /* location table */
         line_size += (stp->current_li + 1) * stp->beam.lines.location_size;
+
+        /* live xregs table */
+        if (INSTRUMENTS_LINE_BREAKPOINTS(stp)) {
+            line_size += stp->current_li * sizeof(Uint16);
+        }
     }
     size = offsetof(BeamCodeHeader,functions) + (stp->ci * sizeof(BeamInstr)) +
         strtab_size + attr_size + compile_size + MD5_SIZE + line_size;
@@ -348,7 +357,7 @@ int beam_load_finish_emit(LoaderState *stp) {
         const unsigned int num_names = stp->beam.lines.name_count;
         const void** const line_items =
             (const void**) &line_tab->func_tab[ftab_size + 1];
-        const void *locp_base;
+        const void *buf_base;
 
         code_hdr->line_table = line_tab;
 
@@ -368,11 +377,13 @@ int beam_load_finish_emit(LoaderState *stp) {
             *fname = beamfile_get_literal(&stp->beam, stp->beam.lines.names[i]);
         }
 
-        locp_base = &line_tab->fname_ptr[stp->beam.lines.name_count];
+        line_tab->live_xregs = NULL;
+
+        buf_base = &line_tab->fname_ptr[stp->beam.lines.name_count];
         line_tab->loc_size = stp->beam.lines.location_size;
 
         if (stp->beam.lines.location_size == sizeof(Uint16)) {
-            Uint16* locp = (Uint16*)locp_base;
+            Uint16* locp = (Uint16*)buf_base;
             line_tab->loc_tab.p2 = locp;
 
             for (i = 0; i < num_instrs; i++) {
@@ -385,9 +396,9 @@ int beam_load_finish_emit(LoaderState *stp) {
             }
 
             *locp++ = LINE_INVALID_LOCATION;
-            str_table = (byte *) locp;
+            buf_base = (void *) locp;
         } else {
-            Uint32* locp = (Uint32*)locp_base;
+            Uint32* locp = (Uint32*)buf_base;
             line_tab->loc_tab.p4 = locp;
 
             ASSERT(stp->beam.lines.location_size == sizeof(Uint32));
@@ -402,8 +413,19 @@ int beam_load_finish_emit(LoaderState *stp) {
             }
 
             *locp++ = LINE_INVALID_LOCATION;
-            str_table = (byte *) locp;
+            buf_base = (void *) locp;
         }
+
+        if (INSTRUMENTS_LINE_BREAKPOINTS(stp)) {
+            Uint16 *curr = (Uint16 *) buf_base;
+            line_tab->live_xregs = curr;
+            for (i = 0; i < num_instrs; i++) {
+                *curr++ = stp->line_instr[i].live;
+            }
+            buf_base = curr;
+        }
+
+        str_table = (byte *) buf_base;
         CHKBLK(ERTS_ALC_T_CODE,code);
     }
 
@@ -822,6 +844,7 @@ new_string_patch(LoaderState* stp, int pos)
 static int add_line_entry(LoaderState *stp,
                           int pos,
                           BeamInstr item,
+                          BeamInstr live_xregs,
                           int insert_duplicates) {
     int is_duplicate;
     unsigned int li;
@@ -839,12 +862,19 @@ static int add_line_entry(LoaderState *stp,
         BeamLoadError2(stp, "line instruction table overflow (%u/%u)",
                        li, stp->beam.lines.instruction_count);
     }
+    if (live_xregs != LINE_UNKNOWN_LIVE_XREGS && live_xregs > MAX_REG) {
+        BeamLoadError2(stp,
+                       "line instruction with invalid live xregs (%u/0x%08x)",
+                       li,
+                       live_xregs);
+    }
 
     is_duplicate = li && (stp->line_instr[li-1].loc == item);
     if (insert_duplicates || !is_duplicate ||
         li <= stp->func_line[stp->function_number - 1]) {
         stp->line_instr[li].pos = pos;
         stp->line_instr[li].loc = item;
+        stp->line_instr[li].live = live_xregs;
         stp->current_li++;
     }
 
@@ -1498,7 +1528,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
 
             /* We'll save some memory by not inserting a line entry that
              * is equal to the previous one. */
-            if (add_line_entry(stp, pos, code[ci-1], 0)) {
+            if (add_line_entry(stp, pos, code[ci-1], LINE_UNKNOWN_LIVE_XREGS, 0)) {
                 goto load_error;
             }
             ci -= 2;                /* Get rid of the instruction */
@@ -1510,7 +1540,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
          * want to miss a single one of them (so they all can be selected),
          * so allow duplicates here.
          */
-        if (add_line_entry(stp, ci-3, code[ci-2], 1)) {
+        if (add_line_entry(stp, ci-3, code[ci-2], code[ci-1], 1)) {
             goto load_error;
         }
         ci -= 3;                /* Get rid of the instruction */
