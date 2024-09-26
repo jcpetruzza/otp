@@ -19,6 +19,7 @@
  */
 
 #include <algorithm>
+#include <cstring>
 #include <float.h>
 
 #include "beam_asm.hpp"
@@ -334,6 +335,49 @@ void BeamModuleAssembler::emit_i_line_breakpoint_trampoline(const ArgWord &Loc,
     a.bind(next);
 }
 
+bool BeamGlobalAssembler::is_line_breakpoint_trampoline(ErtsCodePtr addr) {
+    auto pc = static_cast<const char*>(addr);
+    uint64_t word;
+    std::memcpy(&word, pc, sizeof(word));
+
+    // If addr is a trampoline, first two-bytes are either a JMP SHORT with
+    // offset 0 or 1 (breakpoint enabled), or offset 6 (breakpoint disabled).
+    const auto jmp_short_opcode = 0x00EB;
+    if ((word & 0xFF) != jmp_short_opcode || ((word >> 8) && 0xFF) % 6 > 1) {
+        return false;
+    }
+    word >>= 16;
+    pc += 2;
+
+    // We expect an aligned call here, because we align the trampoline to 8 bytes,
+    // we expect a NOP to align the call. The target is a 32-bit offset from the
+    // call return address (i.e. addr + 2 + 5)
+    const auto aligned_call_opcode = 0xE890;
+    if ((word & 0xFFFF) != aligned_call_opcode) {
+        return false;
+    }
+    word >>= 16;
+    const auto call_offset = (static_cast<int64_t>(word) << 32) >> 32;
+    pc += 6 + call_offset;
+
+    const auto expected_target = (const char*)get_i_line_breakpoint_trampoline_shared();
+    if (pc == expected_target) return true;
+
+    // The call target must be to an an entry in the dispatch-table
+    // that comes at the end of the module, which contains a
+    // "JMP i_line_breakpoint_trampoline_shared"
+    std::memcpy(&word, pc, sizeof(word));
+
+    const auto jmp_opcode = 0xE940;
+    if ((word & 0xFFFF) != jmp_opcode) {
+        return false;
+    }
+    word >>= 16;
+    const int32_t jmp_offset = (static_cast<int64_t>(word) << 32) >> 32;
+    pc += 6 + jmp_offset;
+
+    return pc == expected_target;
+}
 
 static void i_emit_nyi(char *msg) {
     erts_exit(ERTS_ERROR_EXIT, "NYI: %s\n", msg);

@@ -758,6 +758,7 @@ atom unloaded
 atom unloaded_only
 atom unload_cancelled
 atom unsafe
+atom unsupported
 atom value
 atom version
 atom visible
