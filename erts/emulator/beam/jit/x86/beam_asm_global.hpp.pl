@@ -207,6 +207,9 @@ public:
         return ptrs[lbl];
     }
 
+    bool is_line_breakpoint_trampoline(ErtsCodePtr);
+
+
 $decl_get_funcs
 };
 
