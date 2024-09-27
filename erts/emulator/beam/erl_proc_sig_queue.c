@@ -5007,7 +5007,7 @@ handle_suspend(Process *c_p, ErtsMonitor *mon, int *yieldp)
         mstate = erts_atomic_read_bor_acqb(&msp->state,
                                            ERTS_MSUSPEND_STATE_FLG_ACTIVE);
         ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE)); (void) mstate;
-        erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL);
+        erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL, 0);
         *yieldp = !0;
     }
     else {
@@ -5218,7 +5218,7 @@ erts_proc_sig_handle_pending_suspend(Process *c_p)
             mstate = erts_atomic_read_bor_acqb(&msp->state,
                                                ERTS_MSUSPEND_STATE_FLG_ACTIVE);
             ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE)); (void) mstate;
-            erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL);
+            erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL, 0);
         }
 
         erts_monitor_release(&msp->md.u.target);
