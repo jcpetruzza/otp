@@ -8943,6 +8943,8 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
     int sync = 0;
     int async = 0;
     int unless_suspending = 0;
+    int pause_proc_timer = 0;
+    int proc_timer_already_paused = 0;
     erts_aint64_t mstate;
     ErtsMonitorSuspend *msp;
     ErtsMonitorData *mdp;
@@ -8967,6 +8969,9 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
 	    case am_asynchronous:
 		async = 1;
 		break;
+            case am_pause_proc_timer:
+                pause_proc_timer = 1;
+                break;
 	    default: {
                 if (is_tuple_arity(arg, 2)) {
                     Eterm *tp = tuple_val(arg);
@@ -9032,6 +9037,13 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
         }
     }
 
+    if (pause_proc_timer) {
+        erts_aint64_t already_paused_flags = ERTS_MSUSPEND_STATE_FLG_PAUSE_TIMER
+                                            | ERTS_MSUSPEND_STATE_FLG_ACTIVE;
+        mstate = erts_atomic64_read_bor_nob(&msp->state, ERTS_MSUSPEND_STATE_FLG_PAUSE_TIMER);
+        proc_timer_already_paused = (mstate & already_paused_flags) == already_paused_flags;
+    }
+
     if (suspend) {
         erts_aint32_t state;
         Process *rp;
@@ -9052,7 +9064,7 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
         if (rp == ERTS_PROC_LOCK_BUSY)
             send_sig = !0;
         else {
-            send_sig = !suspend_process(BIF_P, rp, 0 /* no pause timer */);
+            send_sig = !suspend_process(BIF_P, rp, pause_proc_timer);
             if (!send_sig) {
                 erts_monitor_list_insert(&ERTS_P_LT_MONITORS(rp), &mdp->u.target);
                 erts_atomic64_read_bor_relb(&msp->state,
@@ -9073,6 +9085,13 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
                     res = am_badarg;
             }
         }
+    } else if (pause_proc_timer && !proc_timer_already_paused) {
+        Process *rp = erts_proc_lookup(BIF_ARG_1);
+        erts_proc_lock(rp, ERTS_PROC_LOCK_STATUS);
+
+        schedule_pause_proc_timer(rp, ERTS_PROC_LOCK_STATUS);
+
+        erts_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
     }
 
     if (sync) {
@@ -9275,7 +9294,7 @@ erts_process_status(Process *rp, Eterm rpid)
 }
 
 /*
-** Suspend a currently executing process 
+** Suspend a currently executing process
 ** If we are to suspend on a port the busy_port is the thing
 ** otherwise busy_port is NIL
 */
