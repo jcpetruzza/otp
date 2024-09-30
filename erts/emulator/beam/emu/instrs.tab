@@ -1260,6 +1260,59 @@ raw_raise() {
     }
 }
 
+// NOP while the breakpoint is disabled
+i_disabled_line_breakpoint() {
+}
+
+i_enabled_line_breakpoint() {
+    int live_xregs;
+    Export *ep;
+
+    HEAVY_SWAPOUT;
+    live_xregs = erts_line_breakpoint_hit__prepare_alloc(I);
+    HEAVY_SWAPOUT;
+
+    if (live_xregs >= 0) {
+        // prepare return address for i_line_breakpoint_cleanup
+        $AH(0, 0, live_xregs);
+        $SAVE_CONTINUATION_POINTER($NEXT_INSTRUCTION);
+
+        // prepare frame to save xregs
+        $AH(live_xregs, 0, live_xregs);
+
+        HEAVY_SWAPOUT;
+        ep = erts_line_breakpoint_hit__prepare_call(c_p, I, reg, E+1);
+        HEAVY_SWAPIN;
+
+        if (ep == NULL) {
+            // We are not calling a erlang function to handle the breakpoint,
+            // so we need to deallocate and continue
+            E += live_xregs + 2;
+            $NEXT0();
+        } else {
+            $SAVE_CONTINUATION_POINTER((BeamInstr *) beam_i_line_breakpoint_cleanup);
+            $NEXT(ep->dispatch.addresses[erts_active_code_ix()]);
+        }
+    }
+}
+
+i_line_breakpoint_cleanup() {
+    int live_xregs;
+
+    HEAVY_SWAPOUT;
+    live_xregs = erts_line_breakpoint_hit__cleanup(reg, E+1);
+    HEAVY_SWAPIN;
+
+    // deallocate saved xregs and return-address that brought us here
+    E += live_xregs + 1; // AH added one more slot for the CP
+
+    $RETURN();
+
+    // remove return address to next instruction and dispatch
+    E += 1;
+    Goto(*I);
+}
+
 // Psuedo-instruction for signalling lambda load errors. Never actually runs.
 i_lambda_error(Dummy) {
 
