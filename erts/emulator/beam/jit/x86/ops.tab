@@ -88,7 +88,12 @@ line I
 
 executable_line I I
 
-debug_line I I t
+debug_line Loc Index Live | instrumenting_line_breakpoints() =>
+    i_debug_line Loc Live | executable_line Loc Index
+debug_line Loc Index Live =>
+    executable_line Loc Index
+
+i_debug_line I t
 
 allocate t t
 allocate_heap t I t
