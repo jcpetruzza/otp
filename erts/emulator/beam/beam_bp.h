@@ -191,6 +191,10 @@ void erts_clear_memory_break(BpFunctions *f);
 Eterm erts_make_bp_session_list(ErtsHeapFactory*, const ErtsCodeInfo*,
                                 Eterm tail);
 
+void erts_install_line_breakpoint(struct erl_module_instance *, ErtsCodePtr);
+void erts_uninstall_line_breakpoint(struct erl_module_instance *, ErtsCodePtr);
+int erts_is_line_breakpoint_code(ErtsCodePtr);
+
 int erts_line_breakpoint_hit__prepare_alloc(ErtsCodePtr pc);
 const Export *erts_line_breakpoint_hit__prepare_call(Process* c_p,
                                                      ErtsCodePtr pc,
