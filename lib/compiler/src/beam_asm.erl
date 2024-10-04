@@ -395,6 +395,8 @@ build_beam_debug_info_1(ExtraChunks0, Dict0) ->
     ExtraChunks = [{~"DbgB",Contents}|ExtraChunks0],
     {ExtraChunks,Dict}.
 
+build_bdi_fill_holes([]) ->
+    [];
 build_bdi_fill_holes([{_,Item}]) ->
     [Item];
 build_bdi_fill_holes([{I0,Item}|[{I1,_}|_]=T]) ->
@@ -633,7 +635,7 @@ flag_to_bit(unsigned)-> 16#00;
 %%flag_to_bit(exact)   -> 16#08;
 flag_to_bit(native)  -> 16#10;
 flag_to_bit({anno,_}) -> 0.
-    
+
 encode_list([H|T], Dict0, Acc) when not is_list(H) ->
     {Enc,Dict} = encode_arg(H, Dict0),
     encode_list(T, Dict, [Acc,Enc]);
