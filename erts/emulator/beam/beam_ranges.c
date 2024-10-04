@@ -358,6 +358,9 @@ lookup_loc(FunctionInfo* fi, const void* pc,
 		return;
 	    }
 	    fi->needed += 3+2+3+2;
+	    fi->live_xregs = lt->live_xregs ? lt->live_xregs[index]
+	                                    : LINE_UNKNOWN_LIVE_XREGS;
+
 	    return;
 	} else {
 	    low = mid + 1;
