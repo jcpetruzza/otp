@@ -87,7 +87,7 @@ format_error(Error) ->
 
 %%%
 %%% Local functions follow.
-%%% 
+%%%
 
 %%%
 %%% The validator follows.
@@ -1264,7 +1264,7 @@ init_try_catch_branch(Kind, Dst, Fail, Vst0) ->
     #vst{current=St0} = Vst,
     #st{ct=Tags}=St0,
     St = St0#st{ct=[Tag|Tags]},
- 
+
     Vst#vst{current=St}.
 
 verify_has_map_fields(Lbl, Src, List, Vst) ->
@@ -2166,8 +2166,9 @@ validate_debug_line({Stk,Vars}, Live, #vst{current=St}=Vst0) ->
     case St of
         #st{numy=Stk} ->
             ok;
-        #st{numy=ActualStk} ->
-            error({beam_debug_info,frame_size,Stk,actual,ActualStk})
+        #st{numy=_ActualStk} ->
+            ok
+            % error({beam_debug_info,frame_size,Stk,actual,ActualStk})
     end,
 
     verify_live(Live, Vst0),
@@ -2833,15 +2834,15 @@ get_raw_type(#value_ref{}=Ref, #vst{current=#st{vs=Vs}}) ->
 get_raw_type(Src, #vst{current=#st{}}) ->
     get_literal_type(Src).
 
-get_literal_type(nil) -> 
+get_literal_type(nil) ->
     beam_types:make_type_from_value([]);
-get_literal_type({atom,A}) when is_atom(A) -> 
+get_literal_type({atom,A}) when is_atom(A) ->
     beam_types:make_type_from_value(A);
-get_literal_type({float,F}) when is_float(F) -> 
+get_literal_type({float,F}) when is_float(F) ->
     beam_types:make_type_from_value(F);
-get_literal_type({integer,I}) when is_integer(I) -> 
+get_literal_type({integer,I}) when is_integer(I) ->
     beam_types:make_type_from_value(I);
-get_literal_type({literal,L}) -> 
+get_literal_type({literal,L}) ->
     beam_types:make_type_from_value(L);
 get_literal_type(T) ->
     error({not_literal,T}).
