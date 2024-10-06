@@ -30,7 +30,7 @@
 
 -export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1,
 	 init_per_group/2,end_per_group/2,
-         smoke/1]).
+         smoke/1,fixed_bugs/1]).
 
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
@@ -40,7 +40,7 @@ all() ->
 
 groups() ->
     [{p,test_lib:parallel(),
-      []}].
+      [fixed_bugs]}].
 
 init_per_suite(Config) ->
     id(Config),
@@ -588,6 +588,32 @@ decode_tag(?tag_a) -> atom;
 decode_tag(?tag_x) -> x;
 decode_tag(?tag_y) -> y;
 decode_tag(?tag_z) -> z.
+
+%%%
+%%% Test cases for fixed bugs.
+%%%
+
+fixed_bugs(_Config) ->
+    ok = unassigned_yreg(ok),
+    {'EXIT',_} = catch unassigned_yreg(not_ok),
+    ok.
+
+unassigned_yreg(V) ->
+    case id(V) of
+        _ ->
+            case V of ok -> ok end,
+            case catch id(whatever) of
+                Y ->
+                    case id(true) of
+                        true ->
+                            id(Y),
+                            ok;
+                        false ->
+                            ok
+                    end
+            end
+    end.
+
 
 %%%
 %%% Common utility functions.

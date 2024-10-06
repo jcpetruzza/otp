@@ -1133,7 +1133,7 @@ def_regs_is([#cg_set{anno=Anno,dst=Dst}=I|Is], Regs, Def0, Acc) ->
            end,
     Def2 = case Anno of
                #{kill_yregs := KillYregs} ->
-                   Def1 -- KillYregs;
+                   def_regs_kill_yregs(Def1 -- KillYregs, KillYregs, Regs);
                #{} ->
                    Def1
            end,
@@ -1178,6 +1178,10 @@ delete_xreg([V|Vs], R, Regs) ->
         #{} -> [V|delete_xreg(Vs, R, Regs)]
     end;
 delete_xreg([], _, _) -> [].
+
+def_regs_kill_yregs(Defs, KillYregs0, Regs) ->
+    KillYregs = #{map_get(V, Regs) => [] || V <- KillYregs0},
+    [D || D <- Defs, not is_map_key(map_get(D, Regs), KillYregs)].
 
 %%%
 %%% Here follows the main code generation functions.
