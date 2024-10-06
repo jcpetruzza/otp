@@ -395,6 +395,8 @@ build_beam_debug_info_1(ExtraChunks0, Dict0) ->
     ExtraChunks = [{~"DbgB",Contents}|ExtraChunks0],
     {ExtraChunks,Dict}.
 
+build_bdi_fill_holes([]) ->
+    [];
 build_bdi_fill_holes([{_,Item}]) ->
     [Item];
 build_bdi_fill_holes([{I0,Item}|[{I1,_}|_]=T]) ->

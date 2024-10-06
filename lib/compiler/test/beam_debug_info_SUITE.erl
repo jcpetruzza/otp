@@ -30,7 +30,9 @@
 
 -export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1,
 	 init_per_group/2,end_per_group/2,
-         smoke/1,fixed_bugs/1]).
+         smoke/1,
+         fixed_bugs/1,
+         empty_module/1]).
 
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
@@ -40,7 +42,8 @@ all() ->
 
 groups() ->
     [{p,test_lib:parallel(),
-      [fixed_bugs]}].
+      [fixed_bugs,
+       empty_module]}].
 
 init_per_suite(Config) ->
     id(Config),
@@ -590,7 +593,7 @@ decode_tag(?tag_y) -> y;
 decode_tag(?tag_z) -> z.
 
 %%%
-%%% Test cases for fixed bugs.
+%%% Other test cases.
 %%%
 
 fixed_bugs(_Config) ->
@@ -625,6 +628,15 @@ wrong_frame_size(X) ->
         _ -> throw(boom)
     end.
 
+empty_module(_Config) ->
+    Mod = list_to_atom(?MODULE_STRING ++ "_" ++
+                           atom_to_list(?FUNCTION_NAME)),
+    Empty = [{attribute,{1,1},file,{atom_to_list(Mod),1}},
+             {attribute,{1,2},module,Mod},
+             {eof,{3,1}}],
+    {ok,Mod,_Code} = compile:forms(Empty, [beam_debug_info,report]),
+
+    ok.
 
 %%%
 %%% Common utility functions.
