@@ -596,6 +596,10 @@ decode_tag(?tag_z) -> z.
 fixed_bugs(_Config) ->
     ok = unassigned_yreg(ok),
     {'EXIT',_} = catch unassigned_yreg(not_ok),
+
+    ~"abc" = wrong_frame_size(id(~"abc")),
+    boom = catch wrong_frame_size(id(42)),
+
     ok.
 
 unassigned_yreg(V) ->
@@ -612,6 +616,13 @@ unassigned_yreg(V) ->
                             ok
                     end
             end
+    end.
+
+wrong_frame_size(X) ->
+    id(X),
+    case id(X) of
+        Y when is_binary(Y) -> Y;
+        _ -> throw(boom)
     end.
 
 
