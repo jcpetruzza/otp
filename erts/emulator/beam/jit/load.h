@@ -37,8 +37,9 @@ typedef struct {
  */
 
 typedef struct {
-    int pos; /* Position in code */
-    int loc; /* Location in source code */
+    int pos;  /* Position in code */
+    int loc;  /* Location in source code */
+    int live; /* Number of live X-registers or LINE_UNKNOWN_LIVE_XREGS */
 } LineInstr;
 
 /* This structure contains all information about the module being loaded. */
