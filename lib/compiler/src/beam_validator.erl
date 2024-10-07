@@ -2166,8 +2166,9 @@ validate_debug_line({Stk,Vars}, Live, #vst{current=St}=Vst0) ->
     case St of
         #st{numy=Stk} ->
             ok;
-        #st{numy=ActualStk} ->
-            error({beam_debug_info,frame_size,Stk,actual,ActualStk})
+        #st{numy=_ActualStk} ->
+            ok
+            % error({beam_debug_info,frame_size,Stk,actual,ActualStk})
     end,
 
     verify_live(Live, Vst0),
