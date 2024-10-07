@@ -1257,6 +1257,7 @@ BIF_RETTYPE code_get_debug_info_1(BIF_ALIST_1)
     ErtsCodeIndex code_ix;
     Module* modp;
     const BeamCodeHeader* hdr;
+    const BeamCodeLineTab* lt;
     const BeamDebugTab* debug;
     Uint i;
     Uint alloc_size;
@@ -1277,6 +1278,8 @@ BIF_RETTYPE code_get_debug_info_1(BIF_ALIST_1)
         BIF_ERROR(BIF_P, BADARG);
     }
 
+    lt = hdr->line_table;
+
     debug = hdr->debug;
     if (debug == NULL) {
         return am_none;
@@ -1295,11 +1298,19 @@ BIF_RETTYPE code_get_debug_info_1(BIF_ALIST_1)
     for (i = debug->item_count-1; i > 0; i--) {
         BeamDebugItem* items = &debug->items[i];
         Sint32 frame_size = items->frame_size;
+        Uint32 location;
         Uint num_vars = items->num_vars;
         Eterm *tp = items->first + 2 * num_vars - 2;
         Eterm frame_size_term;
         Eterm var_list = NIL;
         Eterm tmp;
+
+        if (lt->loc_size == 2) {
+            location = lt->loc_tab.p2[i];
+        } else {
+            ASSERT(lt->loc_size == 4);
+            location = lt->loc_tab.p4[i];
+        }
 
         if (frame_size < 0) {
             frame_size_term = am_none;
@@ -1338,7 +1349,7 @@ BIF_RETTYPE code_get_debug_info_1(BIF_ALIST_1)
         tmp = TUPLE2(hp, frame_size_term, var_list);
         hp += 3;
 
-        tmp = TUPLE2(hp, make_small(i), tmp);
+        tmp = TUPLE2(hp, make_small(LOC_LINE(location)), tmp);
         hp += 3;
 
         result = CONS(hp, tmp, result);
