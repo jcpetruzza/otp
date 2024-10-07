@@ -208,7 +208,7 @@ literal1(Key, #asm{literals=Tab0,next_literal=NextIndex}=Dict) ->
 
 %% Returns the index for a line instruction (adding information
 %% to the location information table).
--spec line(list(), bdict(), 'line' | 'executable_line') ->
+-spec line(list(), bdict(), 'line' | 'executable_line' | 'debug_line') ->
           {non_neg_integer(), bdict()}.
 
 line([], #asm{num_lines=N}=Dict, Instr) when is_atom(Instr) ->
