@@ -3177,4 +3177,11 @@ void BeamModuleAssembler::emit_coverage(void *coverage, Uint index, Uint size) {
 void BeamModuleAssembler::emit_i_debug_line(const ArgWord &Loc,
                                             const ArgWord &Live) {
     emit_validate(Live);
+
+    /* The trampoline code for a line-breakpoint needs to be aligned to
+     * a word, so that changing the code at runtime to enable the breakpoint
+     * happens atomically. Notice this is emitted before the current offset
+     * is added to the line-table.
+     */
+    a.align(AlignMode::kCode, 8);
 }
