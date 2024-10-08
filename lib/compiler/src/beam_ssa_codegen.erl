@@ -1103,7 +1103,7 @@ def_regs_is([#cg_set{op=kill_try_tag,args=[#b_var{}=Tag]}=I|Is], Regs, Def0, Acc
     def_regs_is(Is, Regs, Def, [I|Acc]);
 def_regs_is([#cg_set{op=catch_end,dst=Dst,args=[#b_var{}=Tag|_]}=I|Is], Regs, Def0, Acc) ->
     Def1 = trim_xregs(Def0, 0, Regs),
-    Def2 = ordsets:del_element(Tag, Def1),
+    Def2 = kill_regs(Def1, [Dst,Tag], Regs),
     Def = ordsets:add_element(Dst, Def2),
     def_regs_is(Is, Regs, Def, [I|Acc]);
 def_regs_is([#cg_set{anno=Anno0,op=debug_line}=I0|Is], Regs, Def, Acc) ->
@@ -1120,7 +1120,7 @@ def_regs_is([#cg_set{anno=Anno,dst=Dst,op={bif,Bif},args=Args}=I|Is], Regs, Def0
            end,
     case Regs of
         #{Dst := {Tag,_}=R} when Tag =:= x; Tag =:= y ->
-            Def2 = delete_xreg(Def1, R, Regs),
+            Def2 = kill_reg(Def1, R, Regs),
             Def = ordsets:add_element(Dst, Def2),
             def_regs_is(Is, Regs, Def, [I|Acc]);
         #{} ->
@@ -1133,7 +1133,7 @@ def_regs_is([#cg_set{anno=Anno,dst=Dst}=I|Is], Regs, Def0, Acc) ->
            end,
     Def2 = case Anno of
                #{kill_yregs := KillYregs} ->
-                   def_regs_kill_yregs(Def1 -- KillYregs, KillYregs, Regs);
+                   kill_regs(Def1, KillYregs, Regs);
                #{} ->
                    Def1
            end,
@@ -1142,7 +1142,7 @@ def_regs_is([#cg_set{anno=Anno,dst=Dst}=I|Is], Regs, Def0, Acc) ->
             Def3 = trim_xregs(Def2, 0, Regs),
             Def = case Regs of
                       #{Dst := {Tag,_}=R} when Tag =:= x; Tag =:= y ->
-                          Def4 = delete_xreg(Def3, R, Regs),
+                          Def4 = kill_reg(Def3, R, Regs),
                           ordsets:add_element(Dst, Def4);
                       #{} ->
                           Def3
@@ -1151,7 +1151,7 @@ def_regs_is([#cg_set{anno=Anno,dst=Dst}=I|Is], Regs, Def0, Acc) ->
         #{} ->
             case Regs of
                 #{Dst := {Tag,_}=R} when Tag =:= x; Tag =:= y ->
-                    Def3 = delete_xreg(Def2, R, Regs),
+                    Def3 = kill_reg(Def2, R, Regs),
                     Def = ordsets:add_element(Dst, Def3),
                     def_regs_is(Is, Regs, Def, [I|Acc]);
                 #{} ->
@@ -1172,16 +1172,16 @@ trim_xregs([V|Vs], Live, Regs) ->
     end;
 trim_xregs([], _, _) -> [].
 
-delete_xreg([V|Vs], R, Regs) ->
+kill_reg([V|Vs], R, Regs) ->
     case Regs of
         #{V := R} -> Vs;
-        #{} -> [V|delete_xreg(Vs, R, Regs)]
+        #{} -> [V|kill_reg(Vs, R, Regs)]
     end;
-delete_xreg([], _, _) -> [].
+kill_reg([], _, _) -> [].
 
-def_regs_kill_yregs(Defs, KillYregs0, Regs) ->
-    KillYregs = #{map_get(V, Regs) => [] || V <- KillYregs0},
-    [D || D <- Defs, not is_map_key(map_get(D, Regs), KillYregs)].
+kill_regs(Defs, KillRegs0, Regs) ->
+    KillRegs = #{map_get(V, Regs) => [] || V <- KillRegs0},
+    [D || D <- Defs, not is_map_key(map_get(D, Regs), KillRegs)].
 
 %%%
 %%% Here follows the main code generation functions.

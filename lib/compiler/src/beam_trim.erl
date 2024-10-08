@@ -385,7 +385,7 @@ is_safe_label([{call_ext,_,{extfunc,M,F,A}}|_]) ->
     erl_bifs:is_exit_bif(M, F, A);
 is_safe_label(_) -> false.
 
-is_safe_label_block([{set,[],[],{debug_line,_,_,_,_}}|_]) ->
+is_safe_label_block([{set,[],_,{debug_line,_,_,_,_}}|_]) ->
     false;
 is_safe_label_block([{set,Ds,Ss,_}|Is]) ->
     IsYreg = fun(#tr{r={y,_}}) -> true;

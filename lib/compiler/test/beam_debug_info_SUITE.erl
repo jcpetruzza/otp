@@ -600,8 +600,10 @@ fixed_bugs(_Config) ->
     ok = unassigned_yreg(ok),
     {'EXIT',_} = catch unassigned_yreg(not_ok),
 
-    ~"abc" = wrong_frame_size(id(~"abc")),
+    ~"xyz" = wrong_frame_size(id(~"xyz")),
     boom = catch wrong_frame_size(id(42)),
+
+    {ok,error} = no_function(ok),
 
     ok.
 
@@ -625,8 +627,22 @@ wrong_frame_size(X) ->
     id(X),
     case id(X) of
         Y when is_binary(Y) -> Y;
-        _ -> throw(boom)
+        _Err -> throw(boom)
     end.
+
+no_function(X) ->
+    case catch id(X) of
+        ok ->
+            case catch id(error) of
+                Err ->
+                    id(0),
+                    id({X, Err})
+            end;
+        Err ->
+            id(0),
+            id({X, Err})
+    end.
+
 
 empty_module(_Config) ->
     Mod = list_to_atom(?MODULE_STRING ++ "_" ++
