@@ -127,6 +127,8 @@
 
 -export([term_to_string/1, term_to_string/2]).
 
+-export([breakpoint/4, notify_breakpoint_hit/3]).
+
 %%
 %% Await result of send to port
 %%
@@ -1149,4 +1151,28 @@ term_to_string(T) ->
     Limit :: undefined | pos_integer().
 
 term_to_string(_T, _Limit) ->
+    erlang:nif_error(undefined).
+
+%%
+%% Internal implementation of breakpoints
+%%
+-spec breakpoint(Module, Function, Arity, Line) -> ok when
+    Module :: atom(),
+    Function :: atom(),
+    Arity:: arity(),
+    Line :: pos_integer().
+breakpoint(Module, Function, Arity, Line) ->
+    Me = self(),
+    ResumeRef = make_ref(),
+    ResumeAction = fun() -> Me ! ResumeRef, ok end,
+    case notify_breakpoint_hit({Module, Function, Arity}, Line, ResumeAction) of
+        ok -> receive ResumeRef -> ok end;
+        _ -> ok
+    end.
+
+-spec notify_breakpoint_hit(MFA, Line, ResumeAction) -> ok | term() when
+    MFA :: mfa(),
+    Line :: pos_integer(),
+    ResumeAction :: fun(() -> ok).
+notify_breakpoint_hit(_, _, _) ->
     erlang:nif_error(undefined).
