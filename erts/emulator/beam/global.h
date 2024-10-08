@@ -965,6 +965,7 @@ typedef struct {
     const ErtsCodeMFA* mfa;     /* Pointer to: Mod, Name, Arity */
     Uint needed;                /* Heap space needed for entire tuple */
     Uint32 loc;                 /* Location in source code */
+    Uint16 live_xregs;          /* Number X registers  live */
     const Eterm* fname_ptr;     /* Pointer to fname table */
 } FunctionInfo;
 
