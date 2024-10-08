@@ -22,6 +22,10 @@
 #include <float.h>
 
 #include "beam_asm.hpp"
+extern "C" {
+#include "beam_bp.h"
+}
+
 using namespace asmjit;
 
 #ifdef BEAMASM_DUMP_SIZES
@@ -228,6 +232,108 @@ void BeamModuleAssembler::emit_i_breakpoint_trampoline() {
     ASSERT((a.offset() - code.labelOffsetFromBase(current_label)) ==
            BEAM_ASM_FUNC_PROLOGUE_SIZE);
 }
+
+void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
+    Label exit_trampoline = a.newLabel();
+    Label dealloc_and_exit_trampoline = a.newLabel();
+    Label after_gc_check = a.newLabel();
+    Label dispatch_call = a.newLabel();
+
+    emit_enter_frame();
+
+    /* Pass address of trampoline, will be used to find current function info */
+    a.mov(ARG1, x86::qword_ptr(x86::rsp));
+    a.sub(ARG1, imm(8));  // ARG1 := pc
+    a.mov(TMP_MEM1q, ARG1); // Stash pc in TMP_MEM1q
+
+    emit_enter_runtime();
+    runtime_call<1>(erts_line_breakpoint_hit__prepare_alloc);
+    emit_leave_runtime();
+
+    /* If < 0, we don't have live xregs info, so we skip the breakpoint */
+    a.test(RET, RET);
+    a.js(exit_trampoline);
+
+    /* START allocate live live */
+    #if !defined(NATIVE_ERLANG_STACK)
+    const int cp_space = CP_SIZE;
+    #else
+    const int cp_space = 0;
+    #endif
+
+    a.mov(ARG4, RET);  // ARG4 := live
+    a.lea(RET, x86::ptr_abs(cp_space * 8, RET, 3)); // lea RET, [cp_space * 8 + (RET << 3)]
+      // RET := stack-needed = (live + cp_space) * sizeof(Eterm)
+    a.mov(TMP_MEM2q, RET); // stash stack-needed
+
+    a.lea(ARG3, x86::ptr(RET, S_RESERVED * 8)); // ARG3 := stack-needed + S_RESERVED * sizeof(Eterm);
+
+    a.lea(ARG3, x86::qword_ptr(HTOP, ARG3));
+    a.cmp(ARG3, E);
+    a.short_().jbe(after_gc_check);
+
+    /* gc needed */
+    fragment_call(labels[garbage_collect]);
+    a.mov(RET, TMP_MEM2q);  // RET := (stashed) stack-needed
+    a.bind(after_gc_check);
+
+    a.sub(E, RET);
+
+    #if !defined(NATIVE_ERLANG_STACK)
+    a.mov(getCPRef(), imm(NIL));
+    #endif
+    /* END allocate live live */
+
+    a.mov(ARG1, c_p);
+    a.mov(ARG2, TMP_MEM1q);  // pc
+    load_x_reg_array(ARG3);  // reg
+    a.lea(ARG4, x86::qword_ptr(E, cp_space * 8));  // stk (skipping CP, if needed)
+
+    emit_enter_runtime();
+    runtime_call<4>(erts_line_breakpoint_hit__prepare_call);
+    emit_leave_runtime();
+
+    /* If non-null, RET points to error_handler:breakpoint/4 */
+    a.test(RET, RET);
+    a.jnz(dispatch_call);
+    a.mov(RET, TMP_MEM2q); // RET := (stashed) stack-needed
+    a.jmp(dealloc_and_exit_trampoline);
+
+    a.bind(dispatch_call);
+    erlang_call(emit_setup_dispatchable_call(RET), ARG1);
+
+    a.bind(labels[i_line_breakpoint_cleanup]);
+    load_x_reg_array(ARG1); // reg
+    a.lea(ARG2, x86::qword_ptr(E, cp_space * 8)); // stk (skipping CP, if needed)
+
+    emit_enter_runtime();
+    runtime_call<2>(erts_line_breakpoint_hit__cleanup);
+    emit_leave_runtime();
+
+    a.lea(RET, x86::ptr_abs(cp_space * 8, RET, 3)); // RET := stack-needed
+
+    a.bind(dealloc_and_exit_trampoline); // ASSUMES RET = stack-needed
+    a.add(E, RET);
+
+    a.bind(exit_trampoline);
+    emit_leave_frame();
+    a.ret();
+}
+
+void BeamModuleAssembler::emit_i_line_breakpoint_trampoline(const ArgWord &Loc,
+                                                            const ArgWord &Live) {
+    /* This prologue is used to implement line-breakpoints. The "jmp next" can
+     * be replaced by nops when the breakpoint is enabled, which will instead
+     * trigger the breakpoint when control goes through here */
+    Label next = a.newLabel();
+    a.short_().jmp(next);
+
+    auto fragment = ga->get_i_line_breakpoint_trampoline_shared();
+    aligned_call(resolve_fragment(fragment));
+
+    a.bind(next);
+}
+
 
 static void i_emit_nyi(char *msg) {
     erts_exit(ERTS_ERROR_EXIT, "NYI: %s\n", msg);
