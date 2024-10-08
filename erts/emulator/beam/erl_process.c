@@ -8943,7 +8943,7 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
     int sync = 0;
     int async = 0;
     int unless_suspending = 0;
-    erts_aint_t mstate;
+    erts_aint64_t mstate;
     ErtsMonitorSuspend *msp;
     ErtsMonitorData *mdp;
 
@@ -8997,7 +8997,7 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
         mdp = erts_monitor_to_data(mon);
         msp = (ErtsMonitorSuspend *) mdp;
 
-        mstate = erts_atomic_inc_read_relb(&msp->state);
+        mstate = erts_atomic64_inc_read_relb(&msp->state);
         ASSERT(suspend || (mstate & ERTS_MSUSPEND_STATE_COUNTER_MASK) > 1);
         sync = !async & !suspend & !(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE);
         suspend = !!suspend; /* ensure 0|1 */
@@ -9011,7 +9011,7 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
             ASSERT(mon->type == ERTS_MON_TYPE_SUSPEND);
             mdp = erts_monitor_to_data(mon);
             msp = (ErtsMonitorSuspend *) mdp;
-            mstate = erts_atomic_read_nob(&msp->state);
+            mstate = erts_atomic64_read_nob(&msp->state);
             ASSERT((mstate & ERTS_MSUSPEND_STATE_COUNTER_MASK) > 0);
             mdp = NULL;
             sync = !async & !(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE);
@@ -9025,7 +9025,7 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
             mon = &mdp->origin;
             erts_monitor_tree_insert(&ERTS_P_MONITORS(BIF_P), mon);
             msp = (ErtsMonitorSuspend *) mdp;
-            mstate = erts_atomic_inc_read_relb(&msp->state);
+            mstate = erts_atomic64_inc_read_relb(&msp->state);
             ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE));
             suspend = !0;
             res = am_true;
@@ -9055,8 +9055,8 @@ erts_internal_suspend_process_2(BIF_ALIST_2)
             send_sig = !suspend_process(BIF_P, rp, 0 /* no pause timer */);
             if (!send_sig) {
                 erts_monitor_list_insert(&ERTS_P_LT_MONITORS(rp), &mdp->u.target);
-                erts_atomic_read_bor_relb(&msp->state,
-                                          ERTS_MSUSPEND_STATE_FLG_ACTIVE);
+                erts_atomic64_read_bor_relb(&msp->state,
+                                            ERTS_MSUSPEND_STATE_FLG_ACTIVE);
             }
             erts_proc_unlock(rp, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
         }
@@ -9097,8 +9097,8 @@ resume_process_1(BIF_ALIST_1)
 {
     ErtsMonitor *mon;
     ErtsMonitorSuspend *msp;
-    erts_aint_t mstate;
- 
+    erts_aint64_t mstate;
+
     if (BIF_P->common.id == BIF_ARG_1)
 	BIF_ERROR(BIF_P, BADARG);
 
@@ -9115,7 +9115,7 @@ resume_process_1(BIF_ALIST_1)
     ASSERT(mon->type == ERTS_MON_TYPE_SUSPEND);
     msp = (ErtsMonitorSuspend *) erts_monitor_to_data(mon);
 
-    mstate = erts_atomic_dec_read_relb(&msp->state);
+    mstate = erts_atomic64_dec_read_relb(&msp->state);
 
     ASSERT((mstate & ERTS_MSUSPEND_STATE_COUNTER_MASK) >= 0);
 
