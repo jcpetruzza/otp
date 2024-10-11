@@ -39,6 +39,10 @@
 
 #define INVALID_LAMBDA_INDEX -1
 
+#define INSTRUMENTS_LINE_BREAKPOINTS(stp) \
+    ERTS_DEBUGGER_IS_ENABLED_IN(stp->load_hdr->debugger_flags, \
+                                ERTS_DEBUGGER_LINE_BREAKPOINTS)
+
 static void init_label(Label *lp);
 
 int beam_load_prepare_emit(LoaderState *stp) {
@@ -314,6 +318,7 @@ int beam_load_prepared_dtor(Binary *magic) {
 
 static int add_line_entry(LoaderState *stp,
                           BeamInstr item,
+                          BeamInstr live_xregs,
                           int insert_duplicates) {
     int is_duplicate;
     unsigned int li;
@@ -337,11 +342,19 @@ static int add_line_entry(LoaderState *stp,
                        stp->beam.lines.instruction_count);
     }
 
+    if (live_xregs != LINE_UNKNOWN_LIVE_XREGS && live_xregs > MAX_REG) {
+        BeamLoadError2(stp,
+                       "line instruction with invalid live xregs (%u/0x%08x)",
+                       li,
+                       live_xregs);
+    }
+
     is_duplicate = li && (stp->line_instr[li - 1].loc == item);
 
     if (insert_duplicates || !is_duplicate) {
         stp->line_instr[li].pos = beamasm_get_offset(stp->ba);
         stp->line_instr[li].loc = item;
+        stp->line_instr[li].live = live_xregs;
         stp->current_li++;
     }
 
@@ -667,14 +680,14 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
         /* Since this is the beginning of a new function, force insertion
          * of the line entry even if it happens to be a duplicate of the
          * previous one. */
-        if (add_line_entry(stp, tmp_op->a[0].val, 1)) {
+        if (add_line_entry(stp, tmp_op->a[0].val, LINE_UNKNOWN_LIVE_XREGS, 1)) {
             goto load_error;
         }
         break;
     case op_line_I:
         /* We'll save some memory by not inserting a line entry that
          * is equal to the previous one. */
-        if (add_line_entry(stp, tmp_op->a[0].val, 0)) {
+        if (add_line_entry(stp, tmp_op->a[0].val, LINE_UNKNOWN_LIVE_XREGS, 0)) {
             goto load_error;
         }
         break;
@@ -683,7 +696,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
 
         /* We'll save some memory by not inserting a line entry that
          * is equal to the previous one. */
-        if (add_line_entry(stp, tmp_op->a[0].val, 0)) {
+        if (add_line_entry(stp, tmp_op->a[0].val, LINE_UNKNOWN_LIVE_XREGS, 0)) {
             goto load_error;
         }
         if (stp->load_hdr->coverage_mode == ERTS_COV_LINE) {
@@ -712,7 +725,7 @@ int beam_load_emit_op(LoaderState *stp, BeamOp *tmp_op) {
          * want to miss a single one of them (so they all can be selected),
          * so allow duplicates here.
          */
-        if (add_line_entry(stp, tmp_op->a[0].val, 1)) {
+        if (add_line_entry(stp, tmp_op->a[0].val, tmp_op->a[1].val, 1)) {
             goto load_error;
         }
         break;
@@ -790,6 +803,7 @@ static const BeamCodeLineTab *finish_line_table(LoaderState *stp,
 
     const void *locp_base_ro;
     void *locp_base_rw;
+    void *xregs_base_rw;
 
     int i;
 
@@ -815,6 +829,7 @@ static const BeamCodeLineTab *finish_line_table(LoaderState *stp,
                                      stp->writable_region,
                                      fname_base_ro);
 
+    line_tab_rw->live_xregs = NULL;
     line_tab_rw->loc_size = stp->beam.lines.location_size;
     line_tab_rw->fname_ptr = fname_base_ro;
 
@@ -848,6 +863,7 @@ static const BeamCodeLineTab *finish_line_table(LoaderState *stp,
         }
 
         *locp++ = LINE_INVALID_LOCATION;
+        xregs_base_rw = locp;
     } else {
         Uint32 *locp = (Uint32 *)locp_base_rw;
         line_tab_rw->loc_tab.p4 = (Uint32 *)locp_base_ro;
@@ -864,6 +880,15 @@ static const BeamCodeLineTab *finish_line_table(LoaderState *stp,
         }
 
         *locp++ = LINE_INVALID_LOCATION;
+        xregs_base_rw = locp;
+    }
+
+    if (INSTRUMENTS_LINE_BREAKPOINTS(stp)) {
+        Uint16 *curr = (Uint16 *) xregs_base_rw;
+        line_tab_rw->live_xregs = xregs_base_rw;
+        for (i = 0; i < num_instrs; i++) {
+            *curr++ = stp->line_instr[i].live;
+        }
     }
 
     return line_tab_ro;
@@ -945,6 +970,11 @@ int beam_load_finish_emit(LoaderState *stp) {
 
         /* loc_tab */;
         line_size += (stp->current_li + 1) * stp->beam.lines.location_size;
+
+        /* live xregs table */
+        if (INSTRUMENTS_LINE_BREAKPOINTS(stp)) {
+            line_size += stp->current_li * sizeof(Uint16);
+        }
 
         beamasm_embed_bss(stp->ba, "line", line_size);
     }
