@@ -129,6 +129,8 @@
 
 -export([system_monitor/1, system_monitor/3]).
 
+-export([breakpoint/4, notify_breakpoint_hit/3]).
+
 %%
 %% Await result of send to port
 %%
@@ -1165,4 +1167,28 @@ system_monitor(_Session) ->
       Options :: [term()],
       Return :: undefined | ok | {pid(), Options}.
 system_monitor(_Session, _MonitorPid, _Options) ->
+    erlang:nif_error(undefined).
+
+%%
+%% Internal implementation of breakpoints
+%%
+-spec breakpoint(Module, Function, Arity, Line) -> ok when
+    Module :: atom(),
+    Function :: atom(),
+    Arity:: arity(),
+    Line :: pos_integer().
+breakpoint(Module, Function, Arity, Line) ->
+    Me = self(),
+    ResumeRef = make_ref(),
+    ResumeAction = fun() -> Me ! ResumeRef, ok end,
+    case notify_breakpoint_hit({Module, Function, Arity}, Line, ResumeAction) of
+        ok -> receive ResumeRef -> ok end;
+        _ -> ok
+    end.
+
+-spec notify_breakpoint_hit(MFA, Line, ResumeAction) -> ok | term() when
+    MFA :: mfa(),
+    Line :: pos_integer(),
+    ResumeAction :: fun(() -> ok).
+notify_breakpoint_hit(_, _, _) ->
     erlang:nif_error(undefined).
