@@ -1486,6 +1486,65 @@ int erts_is_call_break(Process *p, ErtsTraceSession *session, int is_time,
     return 1;
 }
 
+void erts_install_line_breakpoint(struct erl_module_instance *mi, ErtsCodePtr cp_exec) {
+    ErtsCodePtr cp_rw;
+
+    erts_unseal_module(mi);
+    cp_rw = erts_writable_code_ptr(mi, cp_exec);
+
+#ifdef BEAMASM
+    erts_asm_bp_enable(cp_rw);
+#else
+{
+    BeamInstr volatile *pc = (BeamInstr*)cp_rw;
+    BeamInstr instr = *pc;
+    BeamInstr br = BeamOpCodeAddr(op_i_enabled_line_breakpoint);
+
+    /* The following write is not protected by any lock.
+     * See note in erts_install_breakpoints().
+     */
+    instr = BeamSetCodeAddr(instr, br);
+    *pc = instr;
+}
+#endif
+
+    erts_seal_module(mi);
+}
+
+void erts_uninstall_line_breakpoint(struct erl_module_instance *mi, ErtsCodePtr cp_exec) {
+    ErtsCodePtr cp_rw;
+
+    erts_unseal_module(mi);
+    cp_rw = erts_writable_code_ptr(mi, cp_exec);
+
+#ifdef BEAMASM
+    erts_asm_bp_disable(cp_rw);
+#else
+{
+    BeamInstr volatile *pc = (BeamInstr*)cp_rw;
+    BeamInstr instr = *pc;
+    BeamInstr br = BeamOpCodeAddr(op_i_disabled_line_breakpoint);
+
+    /* The following write is not protected by any lock.
+     * See note in erts_install_breakpoints().
+     */
+    instr = BeamSetCodeAddr(instr, br);
+    *pc = instr;
+}
+#endif
+
+    erts_seal_module(mi);
+}
+
+int erts_is_line_breakpoint_code(ErtsCodePtr p) {
+#ifdef BEAMASM
+    return beamasm_is_line_breakpoint_trampoline(p);
+#else
+    const UWord instr = *(UWord *)p;
+    return BeamIsOpCode(instr, op_i_disabled_line_breakpoint) || BeamIsOpCode(instr, op_i_enabled_line_breakpoint);
+#endif
+}
+
 int erts_line_breakpoint_hit__prepare_alloc(ErtsCodePtr pc) {
     FunctionInfo fi;
 
