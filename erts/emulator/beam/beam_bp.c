@@ -1486,6 +1486,109 @@ int erts_is_call_break(Process *p, ErtsTraceSession *session, int is_time,
     return 1;
 }
 
+int erts_line_breakpoint_hit__prepare_alloc(ErtsCodePtr pc) {
+    FunctionInfo fi;
+
+    /*
+     * Find breakpoint location
+     */
+    erts_lookup_function_info(&fi, pc, 1);
+    if (!fi.mfa) {
+        erts_fprintf(stderr, "BREAKPOINT HIT BUT UNKNOWN MFA!\n");
+        return -1;
+    }
+
+    /*
+     * Ensure we have location info
+     */
+    if (fi.loc == LINE_INVALID_LOCATION ||
+        fi.live_xregs == LINE_UNKNOWN_LIVE_XREGS) {
+        return -1;
+    }
+
+    return fi.live_xregs;
+}
+
+
+const Export *
+erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Eterm *regs, UWord *stk) {
+    FunctionInfo fi;
+    const Export *ep;
+
+    /*
+     * Search the error_handler module
+     */
+    ep = erts_find_function(am_erts_internal, am_breakpoint, 4,
+                            erts_active_code_ix());
+    if (ep == NULL) {
+        /* No error handler */
+        return NULL;
+    }
+
+    /*
+     * Find breakpoint location
+     */
+    erts_lookup_function_info(&fi, pc, 1);
+    if (!fi.mfa) {
+        return NULL;
+    }
+
+
+    if (ep->info.mfa.module == fi.mfa->module
+        && ep->info.mfa.function == fi.mfa->function
+        && ep->info.mfa.arity == fi.mfa->arity) {
+        /* Cycle breaker */
+        return NULL;
+    }
+
+    ASSERT(fi.loc != LINE_INVALID_LOCATION &&
+           fi.live_xregs != LINE_UNKNOWN_LIVE_XREGS);
+
+    /*
+     * Save live regs on the stack
+     */
+    for(int i = 0; i < fi.live_xregs; i++) {
+        *(stk++) = regs[i];
+    }
+
+    regs[0] = fi.mfa->module;
+    regs[1] = fi.mfa->function;
+    regs[2] = make_small(fi.mfa->arity);
+    regs[3] = make_small(LOC_LINE(fi.loc));
+
+    return ep;
+}
+
+int
+erts_line_breakpoint_hit__cleanup(Eterm *regs, UWord *stk) {
+    FunctionInfo fi;
+    ErtsCodePtr approx_caller_addr;
+    int i = 0;
+
+    // Find the return address in the stack, so that we can
+    // retrieve the xregs info for the caller's line
+    for(UWord *p = stk;; p++) {
+        if (is_CP(*p)) {
+            ErtsCodePtr retaddr = (ErtsCodePtr) *p;
+            approx_caller_addr = (ErtsCodePtr)(((char *)retaddr) - 1);
+            break;
+        }
+    }
+
+    erts_lookup_function_info(&fi, approx_caller_addr, 1);
+    ASSERT(fi.mfa && fi.loc != LINE_INVALID_LOCATION &&
+           fi.live_xregs != LINE_UNKNOWN_LIVE_XREGS);
+
+    /*
+     * Restore X-registers
+     */
+    while(is_not_CP(*stk)) {
+        regs[i++] = *(stk++);
+    }
+
+    return fi.live_xregs;
+}
+
 const ErtsCodeInfo *
 erts_find_local_func(const ErtsCodeMFA *mfa) {
     const BeamCodeHeader *code_hdr;
