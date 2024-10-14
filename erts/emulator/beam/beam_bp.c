@@ -1498,7 +1498,7 @@ void erts_install_line_breakpoint(struct erl_module_instance *mi, ErtsCodePtr cp
 {
     BeamInstr volatile *pc = (BeamInstr*)cp_rw;
     BeamInstr instr = *pc;
-    BeamInstr br = BeamOpCodeAddr(op_i_enabled_line_breakpoint);
+    BeamInstr br = BeamOpCodeAddr(op_i_enabled_line_breakpoint_t);
 
     /* The following write is not protected by any lock.
      * See note in erts_install_breakpoints().
@@ -1523,7 +1523,7 @@ void erts_uninstall_line_breakpoint(struct erl_module_instance *mi, ErtsCodePtr 
 {
     BeamInstr volatile *pc = (BeamInstr*)cp_rw;
     BeamInstr instr = *pc;
-    BeamInstr br = BeamOpCodeAddr(op_i_disabled_line_breakpoint);
+    BeamInstr br = BeamOpCodeAddr(op_i_disabled_line_breakpoint_t);
 
     /* The following write is not protected by any lock.
      * See note in erts_install_breakpoints().
@@ -1541,7 +1541,7 @@ int erts_is_line_breakpoint_code(ErtsCodePtr p) {
     return beamasm_is_line_breakpoint_trampoline(p);
 #else
     const UWord instr = *(UWord *)p;
-    return BeamIsOpCode(instr, op_i_disabled_line_breakpoint) || BeamIsOpCode(instr, op_i_enabled_line_breakpoint);
+    return BeamIsOpCode(instr, op_i_disabled_line_breakpoint_t) || BeamIsOpCode(instr, op_i_enabled_line_breakpoint_t);
 #endif
 }
 
