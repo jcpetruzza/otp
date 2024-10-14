@@ -107,6 +107,8 @@ char *beamasm_get_base(void *instance);
 /* Return current instruction offset, for line information. */
 size_t beamasm_get_offset(void *ba);
 
+int beamasm_is_line_breakpoint_trampoline(ErtsCodePtr addr);
+
 void beamasm_unseal_module(const void *executable_region,
                            void *writable_region,
                            size_t size);

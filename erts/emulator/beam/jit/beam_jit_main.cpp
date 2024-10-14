@@ -690,4 +690,8 @@ extern "C"
         BeamModuleAssembler *ba = static_cast<BeamModuleAssembler *>(instance);
         ba->patchStrings(rw_base, string_table);
     }
+
+    int beamasm_is_line_breakpoint_trampoline(ErtsCodePtr addr) {
+        return bga->is_line_breakpoint_trampoline(addr);
+    }
 }
