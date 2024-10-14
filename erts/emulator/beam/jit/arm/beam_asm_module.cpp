@@ -330,8 +330,7 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
     a.ret(a64::x30);
 }
 
-void BeamModuleAssembler::emit_i_line_breakpoint_trampoline(const ArgWord &Loc,
-                                                            const ArgWord &Live) {
+void BeamModuleAssembler::emit_i_line_breakpoint_trampoline() {
     /* This prologue is used to implement line-breakpoints. The "b next" can
      * be replaced by nops when the breakpoint is enabled, which will instead
      * trigger the breakpoint when control goes through here */

@@ -1486,34 +1486,12 @@ int erts_is_call_break(Process *p, ErtsTraceSession *session, int is_time,
     return 1;
 }
 
-int erts_line_breakpoint_hit__prepare_alloc(ErtsCodePtr pc) {
-    FunctionInfo fi;
-
-    /*
-     * Find breakpoint location
-     */
-    erts_lookup_function_info(&fi, pc, 1);
-    if (!fi.mfa) {
-        erts_fprintf(stderr, "BREAKPOINT HIT BUT UNKNOWN MFA!\n");
-        return -1;
-    }
-
-    /*
-     * Ensure we have location info
-     */
-    if (fi.loc == LINE_INVALID_LOCATION ||
-        fi.live_xregs == LINE_UNKNOWN_LIVE_XREGS) {
-        return -1;
-    }
-
-    return fi.live_xregs;
-}
-
-
 const Export *
-erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Eterm *regs, UWord *stk) {
+erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Uint live, Eterm *regs, UWord *stk) {
     FunctionInfo fi;
     const Export *ep;
+
+    ASSERT(live <= MAX_REG);
 
     /*
      * Search the error_handler module
@@ -1533,7 +1511,6 @@ erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Eterm *regs
         return NULL;
     }
 
-
     if (ep->info.mfa.module == fi.mfa->module
         && ep->info.mfa.function == fi.mfa->function
         && ep->info.mfa.arity == fi.mfa->arity) {
@@ -1541,13 +1518,10 @@ erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Eterm *regs
         return NULL;
     }
 
-    ASSERT(fi.loc != LINE_INVALID_LOCATION &&
-           fi.live_xregs != LINE_UNKNOWN_LIVE_XREGS);
-
     /*
      * Save live regs on the stack
      */
-    for(int i = 0; i < fi.live_xregs; i++) {
+    for(int i = 0; i < live; i++) {
         *(stk++) = regs[i];
     }
 
@@ -1559,25 +1533,9 @@ erts_line_breakpoint_hit__prepare_call(Process* c_p, ErtsCodePtr pc, Eterm *regs
     return ep;
 }
 
-int
+Uint
 erts_line_breakpoint_hit__cleanup(Eterm *regs, UWord *stk) {
-    FunctionInfo fi;
-    ErtsCodePtr approx_caller_addr;
     int i = 0;
-
-    // Find the return address in the stack, so that we can
-    // retrieve the xregs info for the caller's line
-    for(UWord *p = stk;; p++) {
-        if (is_CP(*p)) {
-            ErtsCodePtr retaddr = (ErtsCodePtr) *p;
-            approx_caller_addr = (ErtsCodePtr)(((char *)retaddr) - 1);
-            break;
-        }
-    }
-
-    erts_lookup_function_info(&fi, approx_caller_addr, 1);
-    ASSERT(fi.mfa && fi.loc != LINE_INVALID_LOCATION &&
-           fi.live_xregs != LINE_UNKNOWN_LIVE_XREGS);
 
     /*
      * Restore X-registers
@@ -1586,7 +1544,10 @@ erts_line_breakpoint_hit__cleanup(Eterm *regs, UWord *stk) {
         regs[i++] = *(stk++);
     }
 
-    return fi.live_xregs;
+    /*
+     * Return number of registers restored
+     */
+    return i;
 }
 
 const ErtsCodeInfo *

@@ -241,18 +241,17 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
 
     emit_enter_frame();
 
+    const auto &saved_live = TMP_MEM1q;
+    const auto &saved_pc = TMP_MEM2q;
+    const auto &saved_stack_needed = TMP_MEM3q;
+
+    /* NB. TMP1 = live */
+    a.mov(saved_live, TMP1); // stash live
+
     /* Pass address of trampoline, will be used to find current function info */
-    a.mov(ARG1, x86::qword_ptr(x86::rsp));
-    a.sub(ARG1, imm(8));  // ARG1 := pc
-    a.mov(TMP_MEM1q, ARG1); // Stash pc in TMP_MEM1q
-
-    emit_enter_runtime();
-    runtime_call<1>(erts_line_breakpoint_hit__prepare_alloc);
-    emit_leave_runtime();
-
-    /* If < 0, we don't have live xregs info, so we skip the breakpoint */
-    a.test(RET, RET);
-    a.js(exit_trampoline);
+    a.mov(TMP2, x86::qword_ptr(x86::rsp));
+    a.sub(TMP2, imm(8));  // TMP2:= pc
+    a.mov(saved_pc, TMP2); // Stash pc
 
     /* START allocate live live */
     #if !defined(NATIVE_ERLANG_STACK)
@@ -261,12 +260,14 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
     const int cp_space = 0;
     #endif
 
-    a.mov(ARG4, RET);  // ARG4 := live
-    a.lea(RET, x86::ptr_abs(cp_space * 8, RET, 3)); // lea RET, [cp_space * 8 + (RET << 3)]
-      // RET := stack-needed = (live + cp_space) * sizeof(Eterm)
-    a.mov(TMP_MEM2q, RET); // stash stack-needed
+    a.mov(ARG4, TMP1);  // ARG4 := live
+    a.lea(RET, x86::ptr_abs(cp_space * 8, TMP1, 3));
+            // lea RET, [cp_space * 8 + (TMP1 << 3)]
+            // RET:= stack-needed = (live + cp_space) * sizeof(Eterm)
+    a.mov(saved_stack_needed, RET); // stash stack-needed
 
-    a.lea(ARG3, x86::ptr(RET, S_RESERVED * 8)); // ARG3 := stack-needed + S_RESERVED * sizeof(Eterm);
+    a.lea(ARG3, x86::ptr(RET, S_RESERVED * 8));
+            // ARG3 := stack-needed + S_RESERVED * sizeof(Eterm);
 
     a.lea(ARG3, x86::qword_ptr(HTOP, ARG3));
     a.cmp(ARG3, E);
@@ -274,7 +275,7 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
 
     /* gc needed */
     fragment_call(labels[garbage_collect]);
-    a.mov(RET, TMP_MEM2q);  // RET := (stashed) stack-needed
+    a.mov(RET, saved_stack_needed);  // RET := (stashed) stack-needed
     a.bind(after_gc_check);
 
     a.sub(E, RET);
@@ -285,18 +286,19 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
     /* END allocate live live */
 
     a.mov(ARG1, c_p);
-    a.mov(ARG2, TMP_MEM1q);  // pc
-    load_x_reg_array(ARG3);  // reg
-    a.lea(ARG4, x86::qword_ptr(E, cp_space * 8));  // stk (skipping CP, if needed)
+    a.mov(ARG2, saved_pc);  // pc
+    a.mov(ARG3, saved_live); // live
+    load_x_reg_array(ARG4);  // reg
+    a.lea(ARG5, x86::qword_ptr(E, cp_space * 8));  // stk (skipping CP, if needed)
 
     emit_enter_runtime();
-    runtime_call<4>(erts_line_breakpoint_hit__prepare_call);
+    runtime_call<5>(erts_line_breakpoint_hit__prepare_call);
     emit_leave_runtime();
 
     /* If non-null, RET points to error_handler:breakpoint/4 */
     a.test(RET, RET);
     a.jnz(dispatch_call);
-    a.mov(RET, TMP_MEM2q); // RET := (stashed) stack-needed
+    a.mov(RET, saved_stack_needed); // RET := (stashed) stack-needed
     a.jmp(dealloc_and_exit_trampoline);
 
     a.bind(dispatch_call);
@@ -320,8 +322,7 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
     a.ret();
 }
 
-void BeamModuleAssembler::emit_i_line_breakpoint_trampoline(const ArgWord &Loc,
-                                                            const ArgWord &Live) {
+void BeamModuleAssembler::emit_i_line_breakpoint_trampoline() {
     /* This prologue is used to implement line-breakpoints. The "jmp next" can
      * be replaced by nops when the breakpoint is enabled, which will instead
      * trigger the breakpoint when control goes through here */
