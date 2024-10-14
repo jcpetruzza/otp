@@ -264,24 +264,24 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
     Label after_gc_check = a.newLabel();
     Label dispatch_call = a.newLabel();
 
+    const auto &saved_live = TMP_MEM1q;
+    const auto &saved_pc = TMP_MEM2q;
+    const auto &saved_stack_needed = TMP_MEM3q;
+
     emit_enter_erlang_frame();
+
+    /* NB. TMP1 = live */
+    a.str(TMP1, saved_live); // stash live
 
     /* Pass return address of trampoline, will be used to find current function info */
     a.sub(ARG1, a64::x30, imm(8)); // ARG1 := pc
-    a.str(ARG1, TMP_MEM1q); // Stash pc in TMP_MEM1q
-
-    emit_enter_runtime();
-    runtime_call<1>(erts_line_breakpoint_hit__prepare_alloc);
-    emit_leave_runtime();
-
-    /* If < 0, we don't have live xregs info, so we skip the breakpoint */
-    a.tbnz(ARG1, imm(63), exit_trampoline);
+    a.str(ARG1, saved_pc); // Stash pc
 
     /* START allocate live live */
-    a.mov(ARG4, ARG1);  // ARG4 := live
-    a.lsl(ARG1, ARG1, imm(3));  // ARG1 = stack-needed = live * sizeof(Eterm)
-    a.str(ARG1, TMP_MEM2q);  // stash stack-needed
-    a.add(ARG3, ARG1, imm(S_RESERVED * 8));  // ARG3 := stack-needed + S_RESERVED * sizeof(Eterm)
+    a.mov(ARG4, TMP1);  // ARG4 := live
+    a.lsl(TMP1, TMP1, imm(3));  // TMP1 := stack-needed = live * sizeof(Eterm)
+    a.str(TMP1, saved_stack_needed);  // stash stack-needed
+    a.add(ARG3, TMP1, imm(S_RESERVED * 8));  // ARG3 := stack-needed + S_RESERVED * sizeof(Eterm)
 
     a.add(ARG3, ARG3, HTOP);
     a.cmp(ARG3, E);
@@ -289,16 +289,17 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
 
     /* gc needed */
     aligned_call(labels[garbage_collect]);
-    a.ldr(ARG1, TMP_MEM2q);  // ARG1::= (stashed) stack-needed
+    a.ldr(TMP1, saved_stack_needed);  // TMP1 := (stashed) stack-needed
     a.bind(after_gc_check);
 
-    a.sub(E, E, ARG1);
+    a.sub(E, E, TMP1);
     /* END allocate live live */
 
     a.mov(ARG1, c_p);
-    a.ldr(ARG2, TMP_MEM1q);  /* pc */
-    load_x_reg_array(ARG3);
-    a.mov(ARG4, E);  // stk
+    a.ldr(ARG2, saved_pc);  /* pc */
+    a.ldr(ARG3, saved_live);
+    load_x_reg_array(ARG4);
+    a.mov(ARG5, E);  // stk
 
     emit_enter_runtime<Update::eXRegs>();
     runtime_call<4>(erts_line_breakpoint_hit__prepare_call);
@@ -306,7 +307,7 @@ void BeamGlobalAssembler::emit_i_line_breakpoint_trampoline_shared() {
 
     /* If non-null, ARG1 points to error_handler:breakpoint/4 */
     a.cbnz(ARG1, dispatch_call);
-    a.ldr(ARG1, TMP_MEM2q);  // ARG1 := (stashed) stack-needed
+    a.ldr(ARG1, saved_stack_needed);  // ARG1 := (stashed) stack-needed
     a.b(dealloc_and_exit_trampoline);
 
     a.bind(dispatch_call);
