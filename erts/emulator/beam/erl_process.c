@@ -6914,7 +6914,8 @@ erts_schedule_process(Process *p, erts_aint32_t state, ErtsProcLocks locks)
 static ERTS_INLINE erts_aint32_t
 active_sys_enqueue(Process *p, ErtsProcSysTask *sys_task,
                    erts_aint32_t task_prio, erts_aint32_t enable_flags,
-                   erts_aint32_t state, erts_aint32_t *fail_state_p)
+                   erts_aint32_t state, erts_aint32_t *fail_state_p,
+                   ErtsProcLocks locks)
 {
     int runnable_procs = erts_system_profile_flags.runnable_procs;
     erts_aint32_t n, a, enq_prio, fail_state;
@@ -6929,7 +6930,6 @@ active_sys_enqueue(Process *p, ErtsProcSysTask *sys_task,
     enq_prio = -1;
     a = state;
 
-    ERTS_LC_ASSERT(!(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p)));
     ASSERT(fail_state & (ERTS_PSFLG_EXITING | ERTS_PSFLG_FREE));
     ASSERT(!(fail_state & enable_flags));
     ASSERT(!(state & ERTS_PSFLG_PROXY));
@@ -6941,8 +6941,11 @@ active_sys_enqueue(Process *p, ErtsProcSysTask *sys_task,
      * Otherwise, we only need to take it when we're enqueuing a task and can
      * safely release it before add2runq. */
     if (sys_task || runnable_procs) {
-        erts_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-        status_locked = 1;
+        if (!(locks & ERTS_PROC_LOCK_STATUS)) {
+            ERTS_LC_ASSERT(!(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p)));
+            erts_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+            status_locked = 1;
+        }
     }
 
     while (1) {
@@ -7049,7 +7052,7 @@ erts_proc_sys_schedule(Process *p, erts_aint32_t state, erts_aint32_t enable_fla
 {
     erts_aint32_t fail_state = ERTS_PSFLG_FREE;
 
-    return active_sys_enqueue(p, NULL, 0, enable_flag, state, &fail_state);
+    return active_sys_enqueue(p, NULL, 0, enable_flag, state, &fail_state, 0);
 }
 
 int
@@ -7106,7 +7109,7 @@ done:
 
 static int
 schedule_process_sys_task(Process *p, erts_aint32_t prio, ErtsProcSysTask *st,
-			  erts_aint32_t *fail_state_p)
+			  erts_aint32_t *fail_state_p, ErtsProcLocks locks)
 {
     erts_aint32_t fail_state = *fail_state_p;
     erts_aint32_t state = erts_atomic32_read_acqb(&p->state);
@@ -7115,7 +7118,7 @@ schedule_process_sys_task(Process *p, erts_aint32_t prio, ErtsProcSysTask *st,
         return 0;
     }
     return !(active_sys_enqueue(p, st, prio, ERTS_PSFLG_SYS_TASKS,
-                                state, fail_state_p) & fail_state);
+                                state, fail_state_p, locks) & fail_state);
 }
 
 static ERTS_INLINE int
@@ -10850,7 +10853,8 @@ execute_sys_tasks(Process *c_p, erts_aint32_t *statep, int in_reds)
 
             fail_state = ERTS_PSFLG_EXITING;
 
-            if (schedule_process_sys_task(c_p, st_prio, st, &fail_state)) {
+            if (schedule_process_sys_task(c_p, st_prio, st, &fail_state,
+                                          ERTS_PROC_LOCK_MAIN)) {
                 /* Successfully rescheduled task... */
                 st = NULL;
             }
@@ -11370,7 +11374,7 @@ request_system_task(Process *c_p, Eterm requester, Eterm target,
 	 * signal order...
 	 */
     }
-    if (!schedule_process_sys_task(rp, prio, st, &fail_state)) {
+    if (!schedule_process_sys_task(rp, prio, st, &fail_state, 0)) {
 	if (fail_state & (ERTS_PSFLG_EXITING|ERTS_PSFLG_FREE)) {
 	noproc:
 	    notify_sys_task_executed(c_p, st, noproc_res, 1);
@@ -11429,7 +11433,7 @@ sched_sig_sys_task(Process *c_p, void *vst, int *redsp, ErlHeapFragment **bp)
 	ERTS_INTERNAL_ERROR("system task not supported as signal");
 	break;
     }
-    if (!schedule_process_sys_task(c_p, prio, st, &fail_state)) {
+    if (!schedule_process_sys_task(c_p, prio, st, &fail_state, 0)) {
 	if (fail_state & (ERTS_PSFLG_EXITING|ERTS_PSFLG_FREE))
 	    notify_sys_task_executed(c_p, st, am_false, 1);
 	else if (fail_state & ERTS_PSFLG_DIRTY_RUNNING) {
@@ -11511,7 +11515,7 @@ erts_schedule_cla_gc(Process *c_p, Eterm to, Eterm req_id, int check)
     state = erts_atomic32_read_nob(&rp->state);
     st_prio = ERTS_PSFLGS_GET_USR_PRIO(state);
 
-    if (!schedule_process_sys_task(rp, st_prio, st, &fail_state)) {
+    if (!schedule_process_sys_task(rp, st_prio, st, &fail_state, 0)) {
     noproc:
         (void) notify_sys_task_executed(c_p, st, am_ok, 1);
     }
@@ -11519,7 +11523,8 @@ erts_schedule_cla_gc(Process *c_p, Eterm to, Eterm req_id, int check)
 
 static int
 schedule_generic_sys_task(Eterm pid, ErtsProcSysTaskType type,
-                          int prio, Eterm arg0, Eterm arg1)
+                          int prio, Eterm arg0, Eterm arg1,
+                          ErtsProcLocks locks)
 {
     int res = 0;
     Process *rp = erts_proc_lookup_raw(pid);
@@ -11547,7 +11552,7 @@ schedule_generic_sys_task(Eterm pid, ErtsProcSysTaskType type,
             st_prio = ERTS_PSFLGS_GET_USR_PRIO(state);
             fail_state = ERTS_PSFLG_EXITING;
         }
-        res = schedule_process_sys_task(rp, st_prio, st, &fail_state);
+        res = schedule_process_sys_task(rp, st_prio, st, &fail_state, locks);
 	if (!res)
 	    erts_free(ERTS_ALC_T_PROC_SYS_TSK, st);
     }
@@ -11558,14 +11563,14 @@ void
 erts_schedule_ets_free_fixation(Eterm pid, DbFixation* fix)
 {
     schedule_generic_sys_task(pid, ERTS_PSTT_ETS_FREE_FIXATION,
-                              -1, (Eterm) fix, NIL);
+                              -1, (Eterm) fix, NIL, 0);
 }
 
 int
 erts_sig_prio(Eterm pid, int prio)
 {
     return schedule_generic_sys_task(pid, ERTS_PSTT_PRIO_SIG,
-                                     prio, am_false, NIL);
+                                     prio, am_false, NIL, 0);
 }
 
 static void
@@ -11606,7 +11611,7 @@ erts_schedule_flush_trace_messages(Process *proc, int force_on_proc)
 
     dhndl = erts_thr_progress_unmanaged_delay();
 
-    schedule_generic_sys_task(pid, ERTS_PSTT_FTMQ, -1, NIL, NIL);
+    schedule_generic_sys_task(pid, ERTS_PSTT_FTMQ, -1, NIL, NIL, 0);
 
     erts_thr_progress_unmanaged_continue(dhndl);
 
