@@ -380,7 +380,7 @@ erl_debugger_breakpoint_3(BIF_ALIST_3) {
     erts_schedule_code_barrier(&finish_line_bp.barrier,
                                line_breakpoint_finisher, NULL);
     erts_proc_inc_refc(BIF_P);
-    erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NULL);
+    erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NULL, 0);
     ERTS_BIF_YIELD_RETURN(BIF_P, am_ok);
 
     {
