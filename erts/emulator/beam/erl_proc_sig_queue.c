@@ -5001,11 +5001,11 @@ handle_suspend(Process *c_p, ErtsMonitor *mon, int *yieldp)
 
     if (!(state & ERTS_PSFLG_DIRTY_RUNNING)) {
         ErtsMonitorSuspend *msp;
-        erts_aint_t mstate;
+        erts_aint64_t mstate;
 
         msp = (ErtsMonitorSuspend *) erts_monitor_to_data(mon);
-        mstate = erts_atomic_read_bor_acqb(&msp->state,
-                                           ERTS_MSUSPEND_STATE_FLG_ACTIVE);
+        mstate = erts_atomic64_read_bor_acqb(&msp->state,
+                                             ERTS_MSUSPEND_STATE_FLG_ACTIVE);
         ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE)); (void) mstate;
         erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL, 0);
         *yieldp = !0;
@@ -5213,10 +5213,10 @@ erts_proc_sig_handle_pending_suspend(Process *c_p)
         msp->next = NULL;
         if (!(state & ERTS_PSFLG_EXITING)
             && erts_monitor_is_in_table(&msp->md.u.target)) {
-            erts_aint_t mstate;
+            erts_aint64_t mstate;
 
-            mstate = erts_atomic_read_bor_acqb(&msp->state,
-                                               ERTS_MSUSPEND_STATE_FLG_ACTIVE);
+            mstate = erts_atomic64_read_bor_acqb(&msp->state,
+                                                 ERTS_MSUSPEND_STATE_FLG_ACTIVE);
             ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE)); (void) mstate;
             erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL, 0);
         }
@@ -6044,9 +6044,9 @@ erts_proc_sig_handle_incoming(Process *c_p, erts_aint32_t *statep,
                             break;
                         case ERTS_MON_TYPE_SUSPEND: {
                             ErtsMonitorSuspend *msp;
-                            erts_aint_t mstate;
+                            erts_aint64_t mstate;
                             msp = (ErtsMonitorSuspend *) erts_monitor_to_data(tmon);
-                            mstate = erts_atomic_read_band_acqb(
+                            mstate = erts_atomic64_read_band_acqb(
                                 &msp->state, ~ERTS_MSUSPEND_STATE_FLG_ACTIVE);
                             if (mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE) {
                                 erts_resume(c_p, ERTS_PROC_LOCK_MAIN);
