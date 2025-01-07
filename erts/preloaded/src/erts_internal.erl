@@ -131,6 +131,8 @@
 
 -export([processes_next/1]).
 
+-export([breakpoint/4, notify_breakpoint_hit/3]).
+
 %%
 %% Await result of send to port
 %%
@@ -800,7 +802,7 @@ group_leader(_GL, _Pid, _Ref) ->
       Ref :: reference().
 
 is_process_alive(_Pid, _Ref) ->
-    erlang:nif_error(undefined).    
+    erlang:nif_error(undefined).
 
 -spec erts_internal:is_process_alive(Pid) -> boolean() when
       Pid :: pid().
@@ -869,7 +871,7 @@ process_flag(_Pid, _Flag, _Value) ->
               | {'message', reference()}
               | 'badarg'
               | 'system_limit'.
-                                 
+
 create_dist_channel(_Node, _DistCtrlr, _Tpl) ->
     erlang:nif_error(undefined).
 
@@ -932,7 +934,7 @@ ets_super_user(_Bool) ->
 
 ets_raw_first(_Tab) ->
     erlang:nif_error(undef).
-    
+
 -spec ets_raw_next(Tab, Key) -> term() when
       Tab :: ets:table(),
       Key :: term().
@@ -956,7 +958,7 @@ ets_info_binary(Tab) ->
         ets:safe_fixtable(Tab, false),
         erts_internal:ets_super_user(false)
     end.
-    
+
 ets_info_binary_error(Tab, C, R, []) ->
     erlang:raise(C, R, [{ets, info, [Tab, binary], []}]);
 ets_info_binary_error(Tab, C, R, [SF|SFs]) when
@@ -1171,4 +1173,28 @@ system_monitor(_Session, _MonitorPid, _Options) ->
 
 -spec processes_next(integer()) -> {integer(), [pid()]} | 'none'.
 processes_next(_IterRef) ->
+    erlang:nif_error(undefined).
+
+%%
+%% Internal implementation of breakpoints
+%%
+-spec breakpoint(Module, Function, Arity, Line) -> ok when
+    Module :: atom(),
+    Function :: atom(),
+    Arity:: arity(),
+    Line :: pos_integer().
+breakpoint(Module, Function, Arity, Line) ->
+    Me = self(),
+    ResumeRef = make_ref(),
+    ResumeAction = fun() -> Me ! ResumeRef, ok end,
+    case notify_breakpoint_hit({Module, Function, Arity}, Line, ResumeAction) of
+        ok -> receive ResumeRef -> ok end;
+        _ -> ok
+    end.
+
+-spec notify_breakpoint_hit(MFA, Line, ResumeAction) -> ok | term() when
+    MFA :: mfa(),
+    Line :: pos_integer(),
+    ResumeAction :: fun(() -> ok).
+notify_breakpoint_hit(_, _, _) ->
     erlang:nif_error(undefined).
