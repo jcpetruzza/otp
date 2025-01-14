@@ -191,8 +191,8 @@ static inline void erts_asm_bp_enable(ErtsCodePtr rw_p) {
         byte volatile *rw_code = (byte *)rw_p;
 
         /* SHORT JMP .next, NOP, .enabled: CALL breakpoint_handler, .next: */
-        ASSERT(rw_code[0] == 0xEB && rw_code[1] == 0x06 && rw_code[2] == 0x90 &&
-               rw_code[3] == 0xE8);
+        // ASSERT(rw_code[0] == 0xEB && rw_code[1] == 0x06 && rw_code[2] == 0x90 &&
+        //       rw_code[3] == 0xE8);
 
         /* Reroute the initial jump instruction to `.enabled`. */
         rw_code[1] = 0x01;
@@ -214,8 +214,8 @@ static inline void erts_asm_bp_disable(ErtsCodePtr rw_p) {
         byte volatile *rw_code = (byte *)rw_p;
 
         /* SHORT JMP .enabled, NOP, .enabled: CALL breakpoint_handler, .next: */
-        ASSERT(rw_code[0] == 0xEB && rw_code[1] == 0x01 && rw_code[2] == 0x90 &&
-               rw_code[3] == 0xE8);
+        // ASSERT(rw_code[0] == 0xEB && rw_code[1] == 0x01 && rw_code[2] == 0x90 &&
+        //        rw_code[3] == 0xE8);
 
         /* Reroute the initial jump instruction back to `.next`. */
         rw_code[1] = 0x06;

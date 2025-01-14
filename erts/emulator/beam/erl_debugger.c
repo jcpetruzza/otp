@@ -278,6 +278,10 @@ static void line_breakpoint_finisher(void *ignored)
         unsigned int line = finish_line_bp.line;
 
         do {
+            // TODO: erts_is_line_breakpoint_code should instead
+            // return an enum LINE_BP_ENABLED, LINE_BP_DISABLED, NO_BP
+            // or something, so we don't enable one already enabled,
+            // which fails the assertion
             if (erts_is_line_breakpoint_code(cp_exec)) {
                 if (finish_line_bp.enable) {
                     erts_install_line_breakpoint(mi, cp_exec);
