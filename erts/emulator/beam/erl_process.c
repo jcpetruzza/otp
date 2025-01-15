@@ -9142,11 +9142,6 @@ resume_process_2(BIF_ALIST_2)
         BIF_ERROR(BIF_P, BADARG);
     }
 
-    if (prev_suspend_count == 0) {
-        erts_monitor_tree_delete(&ERTS_P_MONITORS(BIF_P), mon);
-        erts_proc_sig_send_demonitor(&BIF_P->common, BIF_P->common.id, 0, mon);
-    }
-
     if (resume_proc_timer) {
         int needs_to_resume_timer = --msp->ptimer_count == 0;
         if (needs_to_resume_timer) {
@@ -9156,6 +9151,11 @@ resume_process_2(BIF_ALIST_2)
                                            sched_resume_paused_proc_timer,
                                            NULL);
         }
+    }
+
+    if (prev_suspend_count == 0) {
+        erts_monitor_tree_delete(&ERTS_P_MONITORS(BIF_P), mon);
+        erts_proc_sig_send_demonitor(&BIF_P->common, BIF_P->common.id, 0, mon);
     }
 
     BIF_RET(am_true);

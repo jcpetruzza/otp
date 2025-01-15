@@ -59,7 +59,8 @@
          suspend_process_pausing_proc_timer/1,
          suspend_process_pausing_proc_timer_after_suspended/1,
          resume_process_resuming_proc_timer_can_resume_timer_early/1,
-         suspend_process_pausing_proc_needs_balanced_resume_procs/1,
+         suspend_process_pausing_proc_timer_needs_balanced_resume_procs/1,
+         suspend_process_pausing_proc_timer_stress_test/1,
 	 bump_reductions/1, low_prio/1, binary_owner/1, yield/1, yield2/1,
 	 otp_4725/1, dist_unlink_ack_exit_leak/1, bad_register/1,
          garbage_collect/1, otp_6237/1,
@@ -193,7 +194,8 @@ groups() ->
       [suspend_process_pausing_proc_timer,
        suspend_process_pausing_proc_timer_after_suspended,
        resume_process_resuming_proc_timer_can_resume_timer_early,
-       suspend_process_pausing_proc_needs_balanced_resume_procs]},
+       suspend_process_pausing_proc_timer_needs_balanced_resume_procs,
+       suspend_process_pausing_proc_timer_stress_test]},
      {otp_7738, [],
       [otp_7738_waiting, otp_7738_suspended,
        otp_7738_resume]},
@@ -1867,7 +1869,7 @@ resume_process_resuming_proc_timer_can_resume_timer_early(_Config) ->
 
     ok.
 
-suspend_process_pausing_proc_needs_balanced_resume_procs(_Config) ->
+suspend_process_pausing_proc_timer_needs_balanced_resume_procs(_Config) ->
     Pid = erlang:spawn_link(timer, sleep, [infinity]),
 
     true = erlang:suspend_process(Pid),
@@ -1901,6 +1903,36 @@ suspend_process_pausing_proc_needs_balanced_resume_procs(_Config) ->
     true = erlang:resume_process(Pid, [resume_proc_timer]),
     ?assertEqual({status, running}, process_info(Pid, status)),
 
+    ok.
+
+suspend_process_pausing_proc_timer_stress_test(_Config) ->
+    TestCaseProc = self(),
+    RunTest = fun() ->
+        TestRunner = self(),
+        ActionDoneRef = erlang:make_ref(),
+        P = erlang:spawn(fun() ->
+            receive _ -> TestRunner ! {recv, ActionDoneRef}
+            after 1 -> TestRunner ! {timeout, ActionDoneRef}
+            end
+        end),
+
+        true = erlang:suspend_process(P, [pause_proc_timer]),
+        P ! 'wake up!',
+        true = erlang:resume_process(P, [resume_proc_timer]),
+
+        receive
+            {_, ActionDoneRef} -> TestCaseProc ! {ok, TestRunner}
+        end
+    end,
+
+    NumInstances = 100_000,
+    TestRunners = [erlang:spawn(RunTest) || _ <- lists:seq(1, NumInstances)],
+    [
+        receive {ok, P} -> ok
+        after 2_000 -> error({timeout, waiting_for_runner})
+        end
+        || P <- TestRunners
+    ],
     ok.
 
 %% Tests erlang:bump_reductions/1.
