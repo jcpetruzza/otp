@@ -687,6 +687,7 @@ atom siginfo
 atom silent
 atom size
 atom skip
+atom slots
 atom spawn_executable
 atom spawn_driver
 atom spawn_init
