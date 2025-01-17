@@ -24,6 +24,7 @@
 %% 	exit/1
 %%	exit/2
 %%	process_info/1,2
+%%      suspend_process/2 (partially)
 %%	register/2 (partially)
 
 -include_lib("stdlib/include/assert.hrl").
@@ -31,7 +32,7 @@
 
 -define(heap_binary_size, 64).
 
--export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1, 
+-export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1,
 	 init_per_group/2,end_per_group/2, spawn_with_binaries/1,
 	 t_exit_1/1, t_exit_2_other/1, t_exit_2_other_normal/1,
 	 self_exit/1, normal_suicide_exit/1, abnormal_suicide_exit/1,
@@ -56,6 +57,10 @@
          process_info_msgq_len_no_very_long_delay/1,
          process_info_dict_lookup/1,
          process_info_label/1,
+         suspend_process_pausing_proc_timer/1,
+         suspend_process_pausing_proc_timer_after_suspended/1,
+         resume_process_resuming_proc_timer_can_resume_timer_early/1,
+         suspend_process_pausing_proc_needs_balanced_resume_procs/1,
 	 bump_reductions/1, low_prio/1, binary_owner/1, yield/1, yield2/1,
 	 otp_4725/1, dist_unlink_ack_exit_leak/1, bad_register/1,
          garbage_collect/1, otp_6237/1,
@@ -132,6 +137,7 @@ all() ->
      otp_6237,
      {group, spawn_request},
      {group, process_info_bif},
+     {group, suspend_process_bif},
      {group, processes_bif},
      {group, otp_7738}, garb_other_running,
      {group, system_task},
@@ -139,7 +145,7 @@ all() ->
      monitor_tag,
      no_pid_wrap].
 
-groups() -> 
+groups() ->
     [{t_exit_2, [],
       [t_exit_2_other, t_exit_2_other_normal, self_exit,
        normal_suicide_exit, abnormal_suicide_exit,
@@ -187,6 +193,11 @@ groups() ->
        process_info_msgq_len_no_very_long_delay,
        process_info_dict_lookup,
        process_info_label]},
+     {suspend_process_bif, [],
+      [suspend_process_pausing_proc_timer,
+       suspend_process_pausing_proc_timer_after_suspended,
+       resume_process_resuming_proc_timer_can_resume_timer_early,
+       suspend_process_pausing_proc_needs_balanced_resume_procs]},
      {otp_7738, [],
       [otp_7738_waiting, otp_7738_suspended,
        otp_7738_resume]},
@@ -440,7 +451,7 @@ trap_exit_badarg_in_bif(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     test_server:do_times(10, fun trap_exit_badarg_bif/0),
     ok.
-    
+
 trap_exit_badarg_bif() ->
     Pid = spawn_link(erlang, node, [1]),
     receive
@@ -491,7 +502,7 @@ eat_low(_Parent) ->
     after 1000 ->
 	    ok
     end.
-    
+
 eat_high(Low) ->
     process_flag(priority, high),
     receive after 1000 -> ok end,
@@ -671,7 +682,7 @@ process_info_other_msg(Config) when is_list(Config) ->
     Own = {my,own,message},
 
     {messages,[Own]} = process_info(Pid, messages),
-    
+
     Garbage = kb_128(),
     MsgA = {a,Garbage},
     MsgB = {b,Garbage},
@@ -913,7 +924,7 @@ process_info_2_list(Config) when is_list(Config) ->
     5000 = length(V3),
     lists:foreach(fun ({backtrace, _}) -> ok end, V3),
     ok.
-    
+
 process_info_lock_reschedule(Config) when is_list(Config) ->
     %% We need a process that is running and an item that requires
     %% process_info to take the main process lock.
@@ -1009,7 +1020,7 @@ many_args(A,B,C,D,E,F,G,H,I,J) ->
 do_pi_msg_len(PT, AT) ->
     lists:map(fun (_) -> ok end, [a,b,c,d]),
     {message_queue_len, _} = process_info(element(2,PT), element(2,AT)).
-    
+
 process_info_lock_reschedule3(Config) when is_list(Config) ->
     %% We need a process that is running and an item that requires
     %% process_info to take the main process lock.
@@ -1510,7 +1521,7 @@ process_info_self_msgq_len_more_caller_tail_result(Res) ->
       [{process_SUITE,process_info_self_msgq_len_more_caller_tail,0,_} | _]}] = Res,
     true = Len > 0,
     ok.
-    
+
 
 process_info_self_msgq_len_spammer(To) ->
     process_info_self_msgq_len_spammer(To, 10000000).
@@ -1777,6 +1788,144 @@ proc_dict_helper() ->
     end,
     proc_dict_helper().
 
+suspend_process_pausing_proc_timer(_Config) ->
+    BeforeSuspend = fun(_Pid) -> ok end,
+    AfterResume = fun(_Pid) -> ok end,
+    suspend_process_pausing_proc_timer_aux(BeforeSuspend, AfterResume),
+    ok.
+
+suspend_process_pausing_proc_timer_after_suspended(_Config) ->
+    % We suspend the process once before using pause_proc_timer
+    BeforeSuspend = fun(Pid) -> true = erlang:suspend_process(Pid) end,
+    AfterResume = fun(Pid) -> true = erlang:resume_process(Pid) end,
+    suspend_process_pausing_proc_timer_aux(BeforeSuspend, AfterResume),
+    ok.
+
+suspend_process_pausing_proc_timer_aux(BeforeSuspend, AfterResume) ->
+    TcProc = self(),
+    Pid = erlang:spawn_link(
+        fun() ->
+            TcProc ! {sync, self()},
+            receive go -> ok
+            after 2_000 -> exit(timer_not_paused)
+            end,
+            TcProc ! {sync, self()},
+            receive _ -> error(unexpected)
+            after 2_000 -> ok
+            end,
+            TcProc ! {sync, self()}
+        end
+    ),
+
+    WaitForSync = fun () ->
+        receive {sync, Pid} -> ok
+        after 10_000 -> error(timeout)
+        end
+    end,
+    EnsureWaiting = fun() ->
+        wait_until(fun () -> process_info(Pid, status) == {status, waiting} end)
+    end,
+
+    WaitForSync(),
+    EnsureWaiting(),
+
+    BeforeSuspend(Pid),
+    true = erlang:suspend_process(Pid, [pause_proc_timer]),
+    timer:sleep(5_000),
+    true = erlang:resume_process(Pid, [resume_proc_timer]),
+    AfterResume(Pid),
+    timer:sleep(1_000),
+    Pid ! go,
+
+    WaitForSync(),
+    EnsureWaiting(),
+
+    BeforeSuspend(Pid),
+    true = erlang:suspend_process(Pid, [pause_proc_timer]),
+    true = erlang:resume_process(Pid, [resume_proc_timer]),
+    AfterResume(Pid),
+    WaitForSync(),
+    ok.
+
+resume_process_resuming_proc_timer_can_resume_timer_early(_Config) ->
+    TcProc = self(),
+    Pid = erlang:spawn_link(
+        fun() ->
+            TcProc ! {sync, self()},
+            receive go -> error(received_go)
+            after 2_000 -> TcProc ! {sync, self()}
+            end
+        end
+    ),
+
+    WaitForSync = fun () ->
+        receive {sync, Pid} -> ok
+        after 10_000 -> error(timeout)
+        end
+    end,
+    EnsureWaiting = fun() ->
+        wait_until(fun () -> process_info(Pid, status) == {status, waiting} end)
+    end,
+
+
+    WaitForSync(),
+    EnsureWaiting(),
+
+    % Suspend twice, but pause the proc timer only once
+    true = erlang:suspend_process(Pid),
+    true = erlang:suspend_process(Pid, [pause_proc_timer]),
+
+    % Pid is suspended so will not process it just yet
+    Pid ! go,
+
+    % At this point the process is still suspended but the timer is running again
+    true = erlang:resume_process(Pid, [resume_proc_timer]),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+    % The timer must have expired by now
+    timer:sleep(5_000),
+
+    true = erlang:resume_process(Pid),
+    WaitForSync(),
+
+    ok.
+
+suspend_process_pausing_proc_needs_balanced_resume_procs(_Config) ->
+    Pid = erlang:spawn_link(timer, sleep, [infinity]),
+
+    true = erlang:suspend_process(Pid),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+    % No pause_proc_timer so far, so fail
+    ?assertMatch({'EXIT', {badarg, _}},
+                 catch erlang:resume_process(Pid, [resume_proc_timer])),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+
+    true = erlang:suspend_process(Pid),
+    true = erlang:suspend_process(Pid, [pause_proc_timer]),
+    true = erlang:suspend_process(Pid, [pause_proc_timer]),
+
+    % It is ok to do out-of-order resumes; here one that doesn't resume the timer
+    true = erlang:resume_process(Pid),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+    % Do more resumes, in any order
+    true = erlang:resume_process(Pid, [resume_proc_timer]),
+    true = erlang:resume_process(Pid),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+    % Only one suspend remains, and it used pause_proc_timer, so fail if not resuming timer
+    ?assertMatch({'EXIT', {badarg, _}},
+                 catch erlang:resume_process(Pid)),
+    ?assertEqual({status, suspended}, process_info(Pid, status)),
+
+    % Final resume, now running
+    true = erlang:resume_process(Pid, [resume_proc_timer]),
+    ?assertEqual({status, running}, process_info(Pid, status)),
+
+    ok.
+
 %% Tests erlang:bump_reductions/1.
 bump_reductions(Config) when is_list(Config) ->
     erlang:garbage_collect(),
@@ -1925,10 +2074,10 @@ yield_test() ->
     Schedcnt = schedcnt(stop, SC),
     case {R2-R1, Schedcnt} of
 	{Diff, 4} when Diff < 30 ->
-	    ok = io:format("R1 = ~w, R2 = ~w, Schedcnt = ~w", 
+	    ok = io:format("R1 = ~w, R2 = ~w, Schedcnt = ~w",
 		[R1, R2, Schedcnt]);
 	{Diff, _} ->
-	    ok = io:format("R1 = ~w, R2 = ~w, Schedcnt = ~w", 
+	    ok = io:format("R1 = ~w, R2 = ~w, Schedcnt = ~w",
 		[R1, R2, Schedcnt]),
 	    ct:fail({measurement_error, Diff, Schedcnt})
     end.
@@ -1947,7 +2096,7 @@ call_yield(final) ->
 
 schedcnt(start) ->
     Ref = make_ref(),
-    Fun = 
+    Fun =
 	fun (F, Cnt) ->
 		receive
 		    {Ref, Parent} ->
@@ -2098,7 +2247,7 @@ fail_register(Name, Process) ->
 garbage_collect(Config) when is_list(Config) ->
     Prio = process_flag(priority, high),
     true = erlang:garbage_collect(),
-    
+
     TokLoopers = lists:map(fun (_) ->
 		spawn_opt(fun tok_loop/0, [{priority, low}, link])
 	end, lists:seq(1, 10)),
@@ -2244,9 +2393,9 @@ otp_6237(Config) when is_list(Config) ->
 	end,
 	lists:seq(1,5)),
     lists:foreach(fun (_) -> otp_6237_test() end, lists:seq(1, 100)),
-    lists:foreach(fun (S) -> unlink(S),exit(S, kill) end, Slctrs), 
+    lists:foreach(fun (S) -> unlink(S),exit(S, kill) end, Slctrs),
     ok.
-				
+
 otp_6237_test() ->
     Parent = self(),
     Inited = make_ref(),
@@ -2285,7 +2434,7 @@ otp_6237_whereis_loop() ->
 	      _ ->
 		  otp_6237_whereis_loop()
 	  end.
-	     
+
 otp_6237_select_loop() ->
     catch ets:select(otp_6237, ets:fun2ms(fun({K, does_not_exist}) -> K end)),
     otp_6237_select_loop().
@@ -2544,12 +2693,12 @@ processes_bif_test() ->
 	    receive {suspend_me, Suspendee} -> ok end,
 	    erlang:suspend_process(Suspendee),
 	    erlang:system_flag(multi_scheduling, unblock_normal),
-	    
+
 	    [{status,suspended},{current_function,{erlang,ptab_list_continue,2}}] =
 		process_info(Suspendee, [status, current_function]),
 
 	    ok = do_processes_bif_test(WantReds, WillTrap, Processes),
-	    
+
 	    erlang:resume_process(Suspendee),
 	    receive {Suspendee, done, _} -> ok end,
 	    unlink(Suspendee),
@@ -2709,7 +2858,7 @@ do_processes_bif_die_test(N, Processes) ->
 	    io:format("Trying again~n", []),
 	    do_processes_bif_die_test(N-1, Processes)
     end.
-	    
+
 
 wait_until_system_recover() ->
     %% If system hasn't recovered after 10 seconds we give up
@@ -2778,7 +2927,7 @@ processes_last_call_trap(Config) when is_list(Config) ->
 		my_processes()
 	end,
 	lists:seq(1,100)).
-    
+
 my_processes() ->
     processes().
 
@@ -2818,13 +2967,13 @@ processes_gc_trap(Config) when is_list(Config) ->
     receive {suspend_me, Suspendee} -> ok end,
     erlang:suspend_process(Suspendee),
     erlang:system_flag(multi_scheduling, unblock_normal),
-	    
+
     [{status,suspended}, {current_function,{erlang,ptab_list_continue,2}}]
 	= process_info(Suspendee, [status, current_function]),
 
     erlang:garbage_collect(Suspendee),
     erlang:garbage_collect(Suspendee),
-	    
+
     erlang:resume_process(Suspendee),
     receive {Suspendee, done, _} -> ok end,
     erlang:garbage_collect(Suspendee),
@@ -3160,7 +3309,7 @@ spawn_huge_arglist_test(Local, Node, ArgList) ->
         {'DOWN', R2, process, Pid2, Reason2} ->
             ArgList = Reason2
     end,
-    
+
     {Pid3, R3} = case Local of
                      true ->
                          spawn_opt(?MODULE, huge_arglist_child, ArgList, [monitor]);
@@ -3215,7 +3364,7 @@ spawn_request_bif(Config) when is_list(Config) ->
     spawn_request_bif_test(false, Node),
     stop_node(Peer, Node),
     ok.
-                       
+
 spawn_request_bif_test(Local, Node) ->
 
     Me = self(),
@@ -3714,7 +3863,7 @@ spawn_request_abandon_bif(Config) when is_list(Config) ->
     false = spawn_request_abandon(spawn_request(fun () -> ok end)),
     false = spawn_request_abandon(rpc:call(Node, erlang, make_ref, [])),
     try
-        noreturn = spawn_request_abandon(self()) 
+        noreturn = spawn_request_abandon(self())
     catch
         error:badarg ->
             ok
@@ -4043,7 +4192,7 @@ spawn_request_reply_option(Config) when is_list(Config) ->
     spawn_request_reply_option_test(undefined, node()),
     {ok, Peer, Node} = ?CT_PEER(),
     spawn_request_reply_option_test(Peer, Node).
-    
+
 spawn_request_reply_option_test(Peer, Node) ->
     io:format("Testing on node: ~p~n", [Node]),
     Parent = self(),
@@ -4566,7 +4715,7 @@ do_otp_7738_test(Type) ->
 gor(Reds, Stop) ->
     receive
 	drop_me ->
-	    gor(Reds+1, Stop);	    
+	    gor(Reds+1, Stop);
 	{From, reds} ->
 	    From ! {reds, Reds, self()},
 	    gor(Reds+1, Stop);
@@ -4934,7 +5083,7 @@ otp_16642(Config) when is_list(Config) ->
         ++ MkResList(low, 2, 2)
         ++ MkResList(normal, 24, 26)
         ++ MkResList(low, 3, 4),
-    
+
     case Msgs1 =:= ExpMsgs1 of
         true ->
             ok;
@@ -4964,7 +5113,7 @@ otp_16642(Config) when is_list(Config) ->
         ++ MkResList(normal, 8, 15)
         ++ MkResList(low, 1, 1)
         ++ MkResList(normal, 16, 20),
-    
+
     case Msgs2 =:= ExpMsgs2 of
         true ->
             ok;
@@ -5020,7 +5169,7 @@ alias_bif_test(Node) ->
     unalias(A2),
     P2 ! {A2, continue},
     [{'DOWN', M2, _, _, _}] = recv_msgs(1),
-    
+
     A3 = alias([reply]),
     {_P3, M3} = spawn_monitor(Node,
                               fun () ->
@@ -5166,7 +5315,7 @@ monitor_alias_test(Node) ->
                                           MA3 ! {MA3, 4}
                                   end),
     [{'DOWN', M3_1, _, _, _}] = recv_msgs(1),
-    
+
     P4 = spawn(Node,
                fun () ->
                        [{alias, _A4}] = recv_msgs(1)
@@ -5193,7 +5342,7 @@ monitor_alias_test(Node) ->
     [{MA5,1},{'DOWN', M_5, _, _, _}] = recv_msgs(2),
 
     ok.
-    
+
 
 spawn_monitor_alias(Config) when is_list(Config) ->
     %% Exit signals with immediate exit reasons are sent
@@ -5256,7 +5405,7 @@ spawn_monitor_alias_test(Peer, Node, SpawnType, ExitReason) ->
     SpawnError([{monitor, [{alias,alias}]}]),
     SpawnError([{monitor, [{aliases,explicit_unalias}]}]),
     SpawnError([{monitors, [{alias,explicit_unalias}]}]),
-    
+
     {P1, MA1} = Spawn(fun () ->
                               [{alias, A1}] = recv_msgs(1),
                               A1 ! {A1, 1},
@@ -5303,7 +5452,7 @@ spawn_monitor_alias_test(Peer, Node, SpawnType, ExitReason) ->
                                           exit(ExitReason)
                                   end),
     [{'DOWN', M3_1, _, _, ExitReason}] = recv_msgs(1),
-    
+
     {P4, MA4} = Spawn(fun () ->
                               [{alias, _A4}] = recv_msgs(1),
                               exit(ExitReason)
@@ -5346,7 +5495,7 @@ spawn_monitor_alias_test(Peer, Node, SpawnType, ExitReason) ->
                                                   MA6 ! {MA6, 4}
                                           end),
             [{'DOWN', M6_1, _, _, _}] = recv_msgs(1),
-    
+
             ok
     end.
 
