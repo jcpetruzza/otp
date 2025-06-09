@@ -99,6 +99,7 @@ ERL_DETERMINISTIC = @ERL_DETERMINISTIC@
 #	Erlang language section
 # ----------------------------------------------------
 EMULATOR = beam
+ERL_COMPILE_FLAGS += +beam_debug_info
 ifeq ($(ERL_COMPILE_WARNINGS_AS_ERRORS),yes)
   ERL_COMPILE_FLAGS += -Werror
 endif
