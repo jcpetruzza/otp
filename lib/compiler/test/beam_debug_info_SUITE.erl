@@ -33,7 +33,8 @@
 
 -export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1,
          init_per_group/2,end_per_group/2,
-         smoke/1,
+         smoke_default/1,
+         smoke_save_vars/1,
          calls_reported_correctly/1,
          calls_cornercase_reg_in_call/1,
          fixed_bugs/1,
@@ -44,7 +45,8 @@
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() ->
-    [smoke,
+    [smoke_default,
+     smoke_save_vars,
      calls_reported_correctly,
      calls_cornercase_reg_in_call,
      {group,p}].
@@ -70,7 +72,13 @@ init_per_group(_GroupName, Config) ->
 end_per_group(_GroupName, Config) ->
     Config.
 
-smoke(_Config) ->
+smoke_default(_Config) ->
+    smoke([]).
+
+smoke_save_vars(_Config) ->
+    smoke([beam_debug_stack]).
+
+smoke(ExtraOpts) ->
     {ok, Peer, Node} = ?CT_PEER(#{args => ["+D"]}),
 
     TestBeams0 = get_unique_beam_files(),
@@ -92,7 +100,7 @@ smoke(_Config) ->
     HasDbgSupport = erl_debugger:supported() andalso erlang:system_info(emu_flavor) =:= jit,
 
     test_lib:p_run(fun(Beam) ->
-                           do_smoke(Beam, Node, HasDbgSupport)
+                           do_smoke(Beam, Node, HasDbgSupport, ExtraOpts)
                    end, TestBeams),
 
     peer:stop(Peer),
@@ -103,7 +111,7 @@ smoke(_Config) ->
 compiler_beams() ->
     filelib:wildcard(filename:join([code:lib_dir(compiler), "ebin", "*.beam"])).
 
-do_smoke(Beam, Node, HasDbgSupport) ->
+do_smoke(Beam, Node, HasDbgSupport, ExtraOpts) ->
     try
 	{ok,{Mod,[{abstract_code,{raw_abstract_v1,Abstr0}}]}} =
 	    beam_lib:chunks(Beam, [abstract_code]),
@@ -112,9 +120,11 @@ do_smoke(Beam, Node, HasDbgSupport) ->
         %% that the frame size is correct and that all referenced BEAM
         %% registers are valid.
         {ok,Mod,Code} = compile:forms(Abstr0,
-                                      [beam_debug_info,binary,report_errors]),
+                                      [beam_debug_info,binary,
+                                       report_errors|ExtraOpts]),
         {ok,_,Abstr} = compile:forms(Abstr0,
-                                     [beam_debug_info,dexp,binary,report_errors]),
+                                     [beam_debug_info,dexp,binary,
+                                      report_errors|ExtraOpts]),
         SrcVars = source_variables(Abstr),
         IndexToFunctionMap = abstr_debug_lines(Abstr),
 
