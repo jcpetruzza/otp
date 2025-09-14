@@ -4,6 +4,7 @@ load(
     "beam_opcodes",
     "tables",
 )
+load("@otp//buck2:cxx.bzl", "flatten_includes", "headers_union")
 
 alloc_types(
     name = "alloc_types",
@@ -65,4 +66,42 @@ tables(
     atoms = "beam/atom.names",
     bifs = "beam/bif.tab",
     dirty_bifs = "beam/erl_dirty_bif.tab",
+)
+
+cxx_library(
+    name = "headers",
+    exported_deps = ["otp//erts:headers"],
+    exported_headers = headers_union(
+        flatten_includes(
+            glob([
+                "beam/*.h",
+                "sys/common/*.h",
+                "sys/unix/*.h",
+            ]),
+        ),
+        {
+            "erl_alloc_types.h": ":alloc_types[erl_alloc_types.h]",
+            "erl_atom_table.h": ":tables[erl_atom_table.h]",
+            "erl_bif_table.h": ":tables[erl_bif_table.h]",
+
+            "erl_md5.h": "openssl/include/erl_md5.h",
+            "openssl_local/md5.h": "openssl/include/openssl_local/md5.h",
+        },
+        select({
+            "otp//buck2/config/emu_flavor:emu": {
+                "beam_opcodes.h": ":opcodes-emu[beam_opcodes.h]",
+                "beam_cold.h": ":opcodes-emu[beam_cold.h]",
+                "beam_warm.h": ":opcodes-emu[beam_warm.h]",
+                "beam_hot.h": ":opcodes-emu[beam_hot.h]",
+            },
+
+            "otp//buck2/config/emu_flavor:jit": {
+                "beam_opcodes.h": ":opcodes-jit[beam_opcodes.h]",
+                "beamasm_emit.h": ":opcodes-jit[beamasm_emit.h]",
+                "beamasm_protos.h": ":opcodes-jit[beamasm_protos.h]",
+            }
+        })
+    ),
+    header_namespace = "",
+    visibility = ["PUBLIC"],
 )

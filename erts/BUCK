@@ -12,12 +12,8 @@ configure(
 )
 
 cxx_library(
-    name = "common",
-    srcs = glob(["lib_src/common/*.c"]) + select({
-        "config//os:windows": glob(["lib_src/win/*.c"]),
-        "DEFAULT": glob(["lib_src/pthread/*.c"]),
-    }),
-    exported_headers =
+    name = "headers",
+    exported_headers = (
         {
             "config.h": ":config[config.h]",
             "erl_int_sizes_config.h": ":config[include/erl_int_sizes_config.h]",
@@ -36,8 +32,19 @@ cxx_library(
                 "include/internal/win/*.h",
                 "include/internal/x86_64/*.h",
             ])
-        ),
+        )
+    ),
     header_namespace = "",
     visibility = ["PUBLIC"],
     link_style = "static",
+)
+
+cxx_library(
+    name = "common",
+    srcs = glob(["lib_src/common/*.c"]) + select({
+        "config//os:windows": glob(["lib_src/win/*.c"]),
+        "DEFAULT": glob(["lib_src/pthread/*.c"]),
+    }),
+    exported_deps = [":headers"],
+    visibility = ["PUBLIC"],
 )
