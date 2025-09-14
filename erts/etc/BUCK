@@ -1,3 +1,4 @@
+load("@otp//buck2:constants.bzl", "SYSTEM_VSN")
 load("@otp//buck2:cxx.bzl", "flatten_includes")
 
 _COMMON_HEADERS = flatten_includes(glob(["common/**/*.h"]))
@@ -6,13 +7,13 @@ _UNIX_HEADERS = _COMMON_HEADERS | flatten_includes(glob(["unix/**/*.h"]))
 cxx_binary(
     name = "erlexec",
     srcs = ["common/erlexec.c"],
-    headers = {"system_vsn.h": ":system_vsn.h"} | _COMMON_HEADERS,
+    headers = _COMMON_HEADERS,
     header_namespace = "",
     deps = [
         "otp//erts:common",
         "otp//erts/emulator:headers",
     ],
-    compiler_flags = ["-include", "system_vsn.h"],
+    compiler_flags = ["-DOTP_SYSTEM_VERSION={}".format(repr(SYSTEM_VSN))],
     link_style = "static",
     visibility = ["PUBLIC"],
 )
@@ -134,15 +135,6 @@ cxx_binary(
     deps = ["otp//erts:common"],
     link_style = "static",
     visibility = ["PUBLIC"],
-)
-
-genrule(
-    name = "system_vsn.h",
-    cmd = """
-        sed -n '/ERLANG_OTP_RELEASE/{s/ERLANG_OTP_RELEASE/OTP_SYSTEM_VERSION/;p;q}' $SRCS > $OUT
-    """,
-    srcs = ["otp//erts:erl_version.h"],
-    out = "system_vsn.h",
 )
 
 cxx_library(

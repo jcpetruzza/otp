@@ -1,5 +1,5 @@
 load("@otp//buck2/autotools:defs.bzl", "configure")
-load("@otp//buck2/constants.bzl", "OTP_VERSION", "VSN")
+load("@otp//buck2/constants.bzl", "OTP_VERSION", "SYSTEM_VSN", "VSN")
 load("@otp//buck2/cxx.bzl", "strip_include_prefix")
 load("@otp//buck2/codegen:defs.bzl", "erl_version")
 load("@otp//buck2/erlang.bzl", "erts_release")
@@ -53,6 +53,7 @@ alias(
 erl_version(
     name = "erl_version.h",
     otp_version = OTP_VERSION,
+    system_vsn = SYSTEM_VSN,
     vsn = VSN,
     visibility = ["PUBLIC"],
 )

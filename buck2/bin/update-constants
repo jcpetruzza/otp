@@ -74,7 +74,19 @@ def generate_file_content(repo_root: Path, spec: Spec, otp_version_path: Path) -
     lines = ["# @generated with `buck2/bin/update-constants --replace`\n"]
 
     otp_version = read_otp_version(otp_version_path)
-    all_assignments = [f"OTP_VERSION = {repr(otp_version)}\n"]
+
+    system_vsn_digits = []
+    for d in otp_version:
+        if d.isdigit():
+            system_vsn_digits.append(d)
+        else:
+            break
+    system_vsn = ''.join(system_vsn_digits)
+
+    all_assignments = [
+        f"OTP_VERSION = {repr(otp_version)}\n",
+        f"SYSTEM_VSN = {repr(system_vsn)}\n",
+    ]
 
     for mk_rel_path, variables in spec.items():
         mk_full_path = repo_root / mk_rel_path

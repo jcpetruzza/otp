@@ -204,21 +204,12 @@ beam_opcodes = rule(
 def _erl_version_impl(ctx: AnalysisContext):
     output = ctx.actions.declare_output(ctx.attrs.name)
 
-    otp_version = ctx.attrs.otp_version
-    system_vsn_digits = []
-    for d in otp_version.elems():
-        if d.isdigit():
-            system_vsn_digits.append(d)
-        else:
-            break
-    system_vsn = ''.join(system_vsn_digits)
-
     cmd = cmd_args(
         ctx.attrs._script[RunInfo],
         "-o",
         output.as_output(),
-        system_vsn,
-        otp_version,
+        ctx.attrs.system_vsn,
+        ctx.attrs.otp_version,
         ctx.attrs.vsn,
         ctx.attrs._target_triple,
     )
@@ -238,6 +229,7 @@ erl_version = rule(
     attrs = {
         "vsn": attrs.string(),
         "otp_version": attrs.string(),
+        "system_vsn": attrs.string(),
         "_script": attrs.exec_dep(
             providers=[RunInfo],
             default="@otp//erts/emulator/utils:make_version",
