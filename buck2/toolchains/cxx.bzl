@@ -1,14 +1,19 @@
+def cxx_tools_info():
+    # Using msvc_tools for windows is buck2's current default behaviour,
+    # but we'd need to check what are the correct flags to use, so
+    # we stick to clang
+    #
+    # if host_info().os.is_windows:
+    #     return "prelude//toolchains/msvc:msvc_tools"
+
+    return "prelude//toolchains/cxx/clang:path_clang_tools"
+
+
 def c_flags():
     COMMON = [
         "-DHAVE_CONFIG_H",
+        "-D_GNU_SOURCE",
     ]
-
-    OS =  select({
-        "config//os:linux": [
-            "-D_GNU_SOURCE",
-        ],
-        "DEFAULT": [],
-    })
 
     FLAVOR = select({
         "otp//buck2/config/emu_flavor:jit": [
@@ -82,7 +87,6 @@ def c_flags():
 
     return (
         COMMON +
-        OS +
         FLAVOR +
         DEBUG_TYPE +
         GCOV_TYPE +
@@ -95,7 +99,6 @@ def c_flags():
         _opt_flags() +
         _fp_flags() +
         _jump_table_flags() +
-        _maybe_unintialized_warn_flags() +
         _inline_flags()
     )
 
@@ -126,13 +129,6 @@ def _jump_table_flags():
         "otp//buck2/config/emu_type:gcov": ["-DNO_JUMP_TABLE"],
         "otp//buck2/config/emu_type:valgrind": ["-DNO_JUMP_TABLE"],
         "DEFAULT": [],
-    })
-
-def _maybe_unintialized_warn_flags():
-    return select({
-        "otp//buck2/config/emu_type:valgrind": ["-Wno-maybe-uninitialized"],
-        "otp//buck2/config/emu_type:asan": ["-Wno-maybe-uninitialized"],
-        "DEFAULT": []
     })
 
 def _inline_flags():

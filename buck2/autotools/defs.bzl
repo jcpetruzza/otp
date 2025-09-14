@@ -1,4 +1,6 @@
 load("@prelude//paths.bzl", "paths")
+load("@prelude//toolchains:cxx.bzl", "CxxToolsInfo")
+load("@toolchains//cxx.bzl", "cxx_tools_info")
 
 def target_triple():
     return select({
@@ -21,6 +23,7 @@ def target_triple():
 def _configure_impl(ctx: AnalysisContext):
     package = ctx.attrs._package_name
     srcs = ctx.attrs.srcs
+    cxx_tools_info = ctx.attrs._cxx_tools_info[CxxToolsInfo]
 
     # 'configure' doesn't receive inputs as args, so to make this rule hermetic,
     # we need to ensure that no other files exist in the working directory.
@@ -93,6 +96,13 @@ def _configure_impl(ctx: AnalysisContext):
     if dynamic_trace:
         cmd.add(cmd_args(dynamic_trace, format="--with-dynamic-trace={}"))
 
+    cmd.add([
+        cmd_args(cxx_tools_info.archiver, format="AR={}"),
+        cmd_args(cxx_tools_info.compiler, format="CC={}"),
+        cmd_args(cxx_tools_info.cxx_compiler, format="CXX={}"),
+        cmd_args(cxx_tools_info.linker, format="LD={}"),
+    ])
+
     ctx.actions.run(cmd, category = "configure")
 
     outputs = {
@@ -159,6 +169,7 @@ _configure = rule(
             "otp//buck2/config/dynamic-trace:systemtap": "systemtap",
             "DEFAULT": None,
         })),
+        "_cxx_tools_info": attrs.exec_dep(providers = [CxxToolsInfo], default = cxx_tools_info()),
     }
 )
 
