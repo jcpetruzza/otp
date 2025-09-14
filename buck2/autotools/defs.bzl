@@ -1,5 +1,23 @@
 load("@prelude//paths.bzl", "paths")
 
+def target_triple():
+    return select({
+        "config//cpu:x86_64": select({
+            "config//os:linux": "x86_64-pc-linux-gnu",
+            "config//os:macos": "x86_64-apple-darwin",
+            "config//os:windows": select({
+                "config//abi:msvc": "x86_64-pc-windows-msvc",
+            }),
+        }),
+        "config//cpu:arm64": select({
+            "config//os:linux": "aarch64-pc-linux-gnu",
+            "config//os:macos": "arm64-apple-darwin",
+            "config//os:windows": select({
+                "config//abi:msvc": "aarch64-pc-windows-msvc",
+            }),
+        }),
+    })
+
 def _configure_impl(ctx: AnalysisContext):
     # 'configure' doesn't receive inputs as args, so to make this rule hermetic,
     # we need to ensure that no other files exist in the working directory.
@@ -103,12 +121,30 @@ _configure = rule(
     attrs = {
         "script": attrs.source(),
         "srcs": attrs.list(attrs.source()),
-        "_patch_configure": attrs.dep(providers=[RunInfo]),
-        "_run_configure": attrs.dep(providers=[RunInfo]),
+        "_patch_configure": attrs.dep(
+            providers=[RunInfo],
+            default = "otp//buck2/autotools:patch-configure",
+        ),
+        "_run_configure": attrs.dep(
+            providers=[RunInfo],
+            default = "otp//buck2/autotools:run-configure",
+        ),
         "_package_name": attrs.string(),
-        "_common_srcs": attrs.dict(attrs.string(), attrs.list(attrs.source())),
-        "_target_triple": attrs.string(),
-        "_dynamic_trace": attrs.option(attrs.string()),
+        "_common_srcs": attrs.dict(
+            attrs.string(),
+            attrs.list(attrs.source()),
+            default = {
+                "make/autoconf": [
+                    "otp//make/autoconf:config.sub",
+                ],
+            }),
+        "_target_triple": attrs.string(default = target_triple()),
+        "_dynamic_trace": attrs.option(attrs.string(), default = select({
+            "otp//buck2/config/dynamic-trace:dtrace": "dtrace",
+            "otp//buck2/config/dynamic-trace:lttng": "lttng",
+            "otp//buck2/config/dynamic-trace:systemtap": "systemtap",
+            "DEFAULT": None,
+        })),
     }
 )
 
@@ -117,34 +153,5 @@ def configure(*, name, script, srcs, outs=None):
         name = name,
         script = script,
         srcs = srcs,
-        _patch_configure = "otp//buck2/autotools:patch-configure",
-        _run_configure = "otp//buck2/autotools:run-configure",
-        _package_name = package_name(),
-        _common_srcs = {
-            "make/autoconf": [
-                "otp//make/autoconf:config.sub",
-            ],
-        },
-        _target_triple = select({
-            "config//cpu:x86_64": select({
-                "config//os:linux": "x86_64-pc-linux-gnu",
-                "config//os:macos": "x86_64-apple-darwin",
-                "config//os:windows": select({
-                    "config//abi:msvc": "x86_64-pc-windows-msvc",
-                }),
-            }),
-            "config//cpu:arm64": select({
-                "config//os:linux": "aarch64-pc-linux-gnu",
-                "config//os:macos": "arm64-apple-darwin",
-                "config//os:windows": select({
-                    "config//abi:msvc": "aarch64-pc-windows-msvc",
-                }),
-            }),
-        }),
-        _dynamic_trace = select({
-            "otp//buck2/config/dynamic-trace:dtrace": "dtrace",
-            "otp//buck2/config/dynamic-trace:lttng": "lttng",
-            "otp//buck2/config/dynamic-trace:systemtap": "systemtap",
-            "DEFAULT": None
-        }),
+        _package_name = package_name()
     )
