@@ -1,5 +1,14 @@
 load("@prelude//toolchains:demo.bzl", "system_demo_toolchains")
+load("erlang.bzl", "system_erlang_toolchain")
 
 # All the default toolchains, suitable for a quick demo or early prototyping.
 # Most real projects should copy/paste the implementation to configure them.
 system_demo_toolchains()
+
+system_erlang_toolchain(name = "erlang-system")
+
+toolchain_alias(
+    name = "erlang-default",
+    actual = ":erlang-system",
+    visibility=["PUBLIC"],
+)
