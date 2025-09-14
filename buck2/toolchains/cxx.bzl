@@ -2,10 +2,167 @@ def c_flags():
     COMMON = [
         "-DHAVE_CONFIG_H",
     ]
+
     OS =  select({
         "config//os:linux": [
             "-D_GNU_SOURCE",
         ],
         "DEFAULT": [],
     })
-    return COMMON + OS
+
+    FLAVOR = select({
+        "otp//buck2/config/emu_flavor:jit": [
+            "-DBEAMASM=1"
+        ],
+        "otp//buck2/config/emu_flavor:emu": [],
+        "DEFAULT": []
+    })
+
+    DEBUG_TYPE = select({
+        "otp//buck2/config/emu_type:debug": [
+            "-g",
+            "-Og",
+            "-DDEBUG",
+        ],
+        "DEFAULT": [],
+    })
+
+    GCOV_TYPE = select({
+        "otp//buck2/config/emu_type:gcov": [
+            "-DERTS_GCOV",
+            "-fprofile-arcs",
+            "-ftest-coverage",
+            "-O0",
+        ],
+        "DEFAULT": [],
+    })
+
+    VALGRIND_TYPE = select({
+        "otp//buck2/config/emu_type:valgrind": [
+            "-DVALGRIND",
+        ],
+        "DEFAULT": [],
+    })
+
+    ASAN_TYPE = select({
+        "otp//buck2/config/emu_type:asan": [
+            "-fsanitize=address",
+            "-fsanitize-recover=address",
+            "-DADDRESS_SANITIZER",
+        ],
+        "DEFAULT": [],
+    })
+
+    GPROF_TYPE = select({
+        "otp//buck2/config/emu_type:gprof": [
+            "-DGPROF",
+            "-pg",
+        ],
+        "DEFAULT": [],
+    })
+
+    LCNT_TYPE = select({
+        "otp//buck2/config/emu_type:lcnt": [
+            "-DERTS_ENABLE_LOCK_COUNT",
+        ],
+        "DEFAULT": [],
+    })
+
+    FRMPTR_TYPE = select({
+        "otp//buck2/config/emu_type:frmptr": [
+            "-DERTS_FRMPTR",
+        ],
+        "DEFAULT": [],
+    })
+
+    ICOUNT_TYPE = select({
+        "otp//buck2/config/emu_type:icount": [
+            "-DERTS_OPCODE_COUNTER_SUPPORT",
+        ],
+        "DEFAULT": [],
+    })
+
+    return (
+        COMMON +
+        OS +
+        FLAVOR +
+        DEBUG_TYPE +
+        GCOV_TYPE +
+        VALGRIND_TYPE +
+        ASAN_TYPE +
+        GPROF_TYPE +
+        LCNT_TYPE +
+        FRMPTR_TYPE +
+        ICOUNT_TYPE +
+        _fp_flags() +
+        _jump_table_flags() +
+        _maybe_unintialized_warn_flags() +
+        _inline_flags()
+    )
+
+
+def _fp_flags():
+    return select({
+        "otp//buck2/config/emu_type:frmptr": ["-fomit-frame-pointer"],
+        "otp//buck2/config/emu_flavor:jit": ["-fomit-frame-pointer"],
+        "otp//buck2/config/emu_type:asan": ["-fomit-frame-pointer"],
+        "DEFAULT": ["-fno-omit-frame-pointer"],
+    })
+
+def _jump_table_flags():
+    return select({
+        "otp//buck2/config/emu_type:debug": ["-DNO_JUMP_TABLE"],
+        "otp//buck2/config/emu_type:gcov": ["-DNO_JUMP_TABLE"],
+        "otp//buck2/config/emu_type:valgrind": ["-DNO_JUMP_TABLE"],
+        "DEFAULT": [],
+    })
+
+def _maybe_unintialized_warn_flags():
+    return select({
+        "otp//buck2/config/emu_type:valgrind": ["-Wno-maybe-uninitialized"],
+        "otp//buck2/config/emu_type:asan": ["-Wno-maybe-uninitialized"],
+        "DEFAULT": []
+    })
+
+def _inline_flags():
+    return select({
+        "otp//buck2/config/emu_type:gcov": [
+            "-DERTS_CAN_INLINE=0",
+            "-DERTS_INLINE=",
+        ],
+        "otp//buck2/config/emu_type:gprof": [
+            "-DERTS_CAN_INLINE=0",
+            "-DERTS_INLINE=",
+            "-fno-inline-functions",
+        ],
+        "DEFAULT": [],
+    })
+
+def link_flags():
+
+    DEBUG_FLAGS = select({
+        "otp//buck2/config/emu_type:debug-win": ["-g"],
+        "DEFAULT": [],
+    })
+
+    GCOV_FLAGS = select({
+        "otp//buck2/config/emu_type:gcov": ["-lgcov"],
+        "DEFAULT": []
+    })
+
+    ASAN_FLAGS = select({
+        "otp//buck2/config/emu_type:asan": ["-fsanitize=address"],
+        "DEFAULT": []
+    })
+
+    GPROF_FLAGS = select({
+        "otp//buck2/config/emu_type:gprof": ["-pg"],
+        "DEFAULT": []
+    })
+
+    return (
+        DEBUG_FLAGS +
+        GCOV_FLAGS +
+        ASAN_FLAGS +
+        GPROF_FLAGS
+    )

@@ -11,6 +11,15 @@ config_setting(
 )
 
 config_setting(
+    name = "debug-win",
+    constraint_values = [
+        "config//os/constraints:windows",
+        "otp//buck2/constraints/emu_type:debug"
+     ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
     name = "frmptr",
     constraint_values = [ "otp//buck2/constraints/emu_type:frmptr" ],
     visibility = ["PUBLIC"],
