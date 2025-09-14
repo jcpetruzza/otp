@@ -1,11 +1,13 @@
 load(
     "@otp//buck2/codegen:defs.bzl",
     "alloc_types",
+    "beam_asm_global",
     "beam_opcodes",
     "tables",
 )
 load(
     "@otp//buck2:cxx.bzl",
+    "ASMJIT_FLAGS",
     "flatten_includes",
     "headers_union",
     "strip_include_prefix",
@@ -87,7 +89,7 @@ cxx_library(
             "beam/",
             glob([
                 "beam/*.h",
-                "beam/jit/beam_asm.h",
+                "beam/jit/*.h",
             ])
         ),
         {
@@ -174,6 +176,92 @@ cxx_library(
     ],
     modifiers = [
         "otp//buck2/config/emu_flavor:emu",
+    ],
+    link_style = "static",
+)
+
+
+beam_asm_global(
+    name = "beam/jit/x86/beam_asm_global.hpp",
+    src = "beam/jit/x86/beam_asm_global.hpp.pl",
+)
+
+beam_asm_global(
+    name = "beam/jit/arm/beam_asm_global.hpp",
+    src = "beam/jit/arm/beam_asm_global.hpp.pl",
+)
+
+cxx_library(
+    name = "jit-x86",
+    srcs = glob(["beam/jit/*.cpp", "beam/jit/x86/*.cpp"]),
+    headers = headers_union(
+        flatten_includes(glob([
+            "beam/jit/*.h",
+            "beam/jit/*.hpp",
+            "beam/jit/x86/*.hpp"
+        ])),
+       {"beam_asm_global.hpp": ":beam/jit/x86/beam_asm_global.hpp"},
+    ),
+    header_namespace = "",
+    deps = [
+        ":headers",
+        "@otp//erts/emulator/asmjit:lib",
+    ],
+    precompiled_header = "@otp//erts/emulator/asmjit:pch",
+    compiler_flags = ASMJIT_FLAGS,
+    target_compatible_with = [
+        "config//cpu:x86_64",
+        "otp//buck2/constraints/emu_flavor:jit",
+    ],
+    modifiers = [
+        "otp//buck2/constraints/emu_flavor:jit",
+    ],
+    link_style = "static",
+)
+
+cxx_library(
+    name = "jit-arm",
+    srcs = glob(["beam/jit/*.cpp", "beam/jit/arm/*.cpp"]),
+    headers = headers_union(
+        flatten_includes(glob([
+            "beam/jit/*.h",
+            "beam/jit/*.hpp",
+            "beam/jit/arm/*.hpp"
+        ])),
+       {"beam_asm_global.hpp": ":beam/jit/arm/beam_asm_global.hpp"},
+    ),
+    header_namespace = "",
+    deps = [
+        ":headers",
+        "@otp//erts/emulator/asmjit:headers-arm",
+        "@otp//erts/emulator/asmjit:lib",
+    ],
+    precompiled_header = "@otp//erts/emulator/asmjit:pch",
+    compiler_flags = ASMJIT_FLAGS,
+    target_compatible_with = [
+        "config//cpu:arm64",
+        "otp//buck2/constraints/emu_flavor:jit"
+    ],
+    modifiers = [
+        "otp//buck2/constraints/emu_flavor:jit"
+    ],
+    link_style = "static",
+)
+
+cxx_library(
+    name = "jit",
+    srcs = glob(["beam/jit/*.c"]) + [
+        ":opcodes-jit[beam_opcodes.c]",
+    ],
+    deps = [
+        ":headers",
+    ],
+    exported_deps =  select({
+        "otp//buck2/config/emu_flavor:jit-x86_64": [":jit-x86"],
+        "otp//buck2/config/emu_flavor:jit-aarch64": [":jit-arm"],
+    }),
+    target_compatible_with = [
+        "otp//buck2/config/emu_flavor:jit"
     ],
     link_style = "static",
 )

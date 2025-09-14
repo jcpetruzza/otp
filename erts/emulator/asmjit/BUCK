@@ -13,6 +13,13 @@ cxx_library(
     header_namespace = "",
 )
 
+cxx_library(
+    name = "headers-arm",
+    exported_headers = glob(["a64.h", "arm/*h", "core/*.h"]),
+    header_namespace = "asmjit",
+    visibility = ["PUBLIC"],
+)
+
 cxx_precompiled_header(
     name = "pch",
     src = ":asmjit.hpp",

@@ -239,3 +239,12 @@ erl_version = rule(
         "_target_triple": attrs.string(default = target_triple()),
     },
 )
+
+def beam_asm_global(*, name: str, src: str):
+    native.genrule(
+        name = name,
+        cmd = "perl ${SRCS} > ${OUT}",
+        env = {"LANG": "C"},
+        srcs = [src],
+        out = name,
+    )
