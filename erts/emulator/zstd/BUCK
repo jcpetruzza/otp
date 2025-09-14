@@ -1,0 +1,26 @@
+cxx_library(
+    name = "lib",
+    srcs = glob([
+        "common/*.c",
+        "compress/*.c",
+        "decompress/*.c",
+        "decompress/huf_decompress_amd64.S",
+    ]),
+    headers = glob([
+        "common/*.h",
+        "compress/*.h",
+        "decompress/*.h",
+    ]),
+    exported_headers = glob(["*.h"]),
+    header_namespace = "",
+    compiler_flags = [
+        "-MMD",
+        "-MP",
+    ] + select({
+        "otp//buck2/config/emu_type:debug": ["-DDEBUGLEVEL=1"],
+        "otp//buck2/config/emu_type:asan": ["-DZSTD_ADDRESS_SANITIZER"],
+        "DEFAULT": [],
+    }),
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
