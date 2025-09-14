@@ -4,6 +4,7 @@ load(
     "beam_asm_global",
     "build_flags",
     "beam_opcodes",
+    "driver_tab",
     "preloaded",
     "tables",
     "yielding_c_fun",
@@ -139,6 +140,12 @@ yielding_c_fun(
         "-f", "erts_qsort_helper",
         "-f", "erts_qsort_partion_array",
     ],
+)
+
+driver_tab(
+    name = "driver_tab.c",
+    nifs = glob(["nifs/common/*_nif.c"]),
+    drivers = glob(["drivers/common/*_drv.c"]),
 )
 
 cxx_library(

@@ -1,3 +1,4 @@
+load("@prelude//:artifacts.bzl", "ArtifactGroupInfo")
 load("@otp//buck2/autotools:defs.bzl", "target_triple")
 
 def _alloc_types_impl(ctx: AnalysisContext):
@@ -322,5 +323,75 @@ build_flags = rule(
             providers=[RunInfo],
             default="otp//erts/emulator/utils:make_compiler_flags",
         ),
+    },
+)
+
+def _expand_list_of_filegroup_or_source(xs):
+    result = []
+    for x in xs:
+        if isinstance(x, Dependency):
+            result.extend(x[ArtifactGroupInfo].artifacts)
+        else:
+            result.append(x)
+    return result
+
+def _driver_tab_impl(ctx: AnalysisContext):
+    wrapper = ctx.attrs._wrapper[RunInfo]
+    script = ctx.attrs._script[RunInfo]
+
+    nifs = _expand_list_of_filegroup_or_source(ctx.attrs.nifs)
+    static_nifs = _expand_list_of_filegroup_or_source(ctx.attrs.static_nifs)
+
+    drivers = _expand_list_of_filegroup_or_source(ctx.attrs.drivers)
+    static_drivers = _expand_list_of_filegroup_or_source(ctx.attrs.static_drivers)
+
+
+    out = ctx.actions.declare_output(ctx.attrs.name)
+
+    cmd = cmd_args(wrapper)
+    cmd.add(cmd_args(nifs, prepend="-nif"))
+    cmd.add(cmd_args(static_nifs, prepend="-static-nif"))
+    cmd.add(cmd_args(drivers, prepend="-driver"))
+    cmd.add(cmd_args(static_drivers, prepend="-static-driver"))
+    cmd.add(["--", script, "-o", out.as_output()])
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(default_output = out)
+    ]
+
+driver_tab = rule(
+    impl = _driver_tab_impl,
+    attrs = {
+        "nifs": attrs.list(attrs.one_of(
+            attrs.dep(providers=[ArtifactGroupInfo]),
+            attrs.source(),
+        ), default=[]),
+        "static_nifs": attrs.list(attrs.one_of(
+            attrs.dep(providers=[ArtifactGroupInfo]),
+            attrs.source(),
+        ), default=[]),
+        "drivers": attrs.list(attrs.one_of(
+            attrs.dep(providers=[ArtifactGroupInfo]),
+            attrs.source(),
+        ), default=[]),
+        "static_drivers": attrs.list(attrs.one_of(
+            attrs.dep(providers=[ArtifactGroupInfo]),
+            attrs.source(),
+        ), default=[]),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="otp//erts/emulator/utils:make_driver_tab",
+        ),
+        "_wrapper": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//buck2/codegen:run-make-driver",
+        ),
+
     },
 )
