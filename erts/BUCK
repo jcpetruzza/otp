@@ -1,3 +1,4 @@
+load("@otp//buck2:defs.bzl", "CFLAGS")
 load("@otp//buck2/autotools:defs.bzl", "configure")
 
 configure(
@@ -9,14 +10,6 @@ configure(
         "include/internal/ethread_header_config.h.in",
     ],
 )
-
-_OTP_CFLAGS = [
-        "-DHAVE_CONFIG_H",
-    ] + select({ "config//os:linux": [
-            "-D_GNU_SOURCE"
-        ],
-        "DEFAULT": [],
-    })
 
 cxx_library(
     name = "common",
@@ -34,6 +27,7 @@ cxx_library(
             for h in glob(["include/internal/**/*.h"])
         ]),
     header_namespace = "",
-    compiler_flags = _OTP_CFLAGS,
+    compiler_flags = CFLAGS,
+    visibility = ["PUBLIC"],
     link_style = "static",
 )

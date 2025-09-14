@@ -1,0 +1,25 @@
+load("@otp//buck2:defs.bzl", "CFLAGS")
+load("@otp//buck2/tests:defs.bzl", "otp_tests")
+
+EPMD_PORT_NO=4369
+
+cxx_binary(
+    name = "epmd",
+    srcs = glob(["src/*.c"]),
+    headers = glob(["src/*.h"]),
+    deps = [
+        "otp//erts:common",
+    ],
+    compiler_flags = CFLAGS + [
+        "-DEPMD_PORT_NO={}".format(EPMD_PORT_NO)
+    ],
+    visibility = ["PUBLIC"],
+)
+
+otp_tests(
+    name = "tests",
+    suites = glob(["test/*_SUITE.erl"]),
+    resources = [
+        ":epmd",
+    ]
+)
