@@ -26,6 +26,9 @@ erts/preloaded/src/deps/
 !/erts/preloaded/ebin/*.beam
 !/lib/*/test/*_SUITE_data/*.beam
 
+# buck2
+buck-out
+
 #
 # Generated source code files.
 #
