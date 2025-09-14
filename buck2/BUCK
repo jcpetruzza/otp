@@ -1,0 +1,19 @@
+export_file(
+    name = "constants.bzl",
+    visibility = ["PUBLIC"],
+)
+
+sh_binary(
+    name = "update-constants",
+    main = "bin/update-constants",
+)
+
+sh_test(
+    name = "constants-up-to-date",
+    test = ":update-constants",
+    args = [
+        # "--spec", "$(source constants.spec)",
+        "--file", "$(source constants.bzl)",
+        "--verify"
+    ],
+)

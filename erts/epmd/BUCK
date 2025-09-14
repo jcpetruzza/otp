@@ -1,6 +1,5 @@
+load("@otp//buck2/constants.bzl", "EPMD_PORT_NO")
 load("@otp//buck2/tests:defs.bzl", "otp_tests")
-
-EPMD_PORT_NO=4369
 
 cxx_binary(
     name = "epmd",

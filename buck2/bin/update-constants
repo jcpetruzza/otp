@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+
+import argparse
+import difflib
+import json
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Dict, List, Union
+
+Spec = Dict[str, Union[str, List[str]]]
+
+
+def find_repo_root() -> Path:
+    script_path = Path(__file__).resolve()
+
+    if script_path.parent.name != "bin" or script_path.parent.parent.name != "buck2":
+        sys.stderr.write(
+            f"Error: Script expected to be located in ERL_TOP/buck2/bin, but found '{script_path}'\n"
+        )
+        sys.exit(1)
+
+    return script_path.parent.parent.parent
+
+
+def parse_mk_file(mk_path: Path, variables: Union[str, List[str]]) -> Dict[str, str]:
+    try:
+        with open(mk_path, "r") as f:
+            content = f.read()
+    except FileNotFoundError:
+        sys.stderr.write(f"Error: .mk file not found: {mk_path}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"Error reading {mk_path}: {e}\n")
+        sys.exit(1)
+
+    results = {}
+
+    if isinstance(variables, str):
+        variables = [variables]
+
+    for var in variables:
+        pattern = rf"^{re.escape(var)}\s*=\s*(.*)$"
+        matches = re.findall(pattern, content, re.MULTILINE)
+
+        if not matches:
+            sys.stderr.write(f"Error: Variable '{var}' not found in {mk_path}\n")
+            sys.exit(1)
+        elif len(matches) > 1:
+            sys.stderr.write(
+                f"Error: Variable '{var}' defined multiple times in {mk_path}\n"
+            )
+            sys.exit(1)
+
+        results[var] = matches[0].strip()
+
+    return results
+
+
+def read_otp_version(otp_version_path: Path) -> str:
+    try:
+        with open(otp_version_path, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        sys.stderr.write(f"Error: OTP_VERSION file not found: {otp_version_path}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"Error reading {otp_version_path}: {e}\n")
+        sys.exit(1)
+
+
+def generate_file_content(repo_root: Path, spec: Spec, otp_version_path: Path) -> str:
+    lines = ["# @generated with `buck2/bin/update-constants --replace`\n"]
+
+    otp_version = read_otp_version(otp_version_path)
+    all_assignments = [f"OTP_VERSION = {repr(otp_version)}\n"]
+
+    for mk_rel_path, variables in spec.items():
+        mk_full_path = repo_root / mk_rel_path
+
+        var_assignments = parse_mk_file(mk_full_path, variables)
+
+        for var, value in var_assignments.items():
+            all_assignments.append(f"{var} = {repr(value)}\n")
+
+    sorted_assignments = sorted(all_assignments)
+    lines.extend(sorted_assignments)
+
+    return "".join(lines)
+
+
+def update_constants_file(repo_root: Path, spec: Spec, otp_version_path: Path, file_path: Path) -> None:
+    content = generate_file_content(repo_root, spec, otp_version_path)
+    try:
+        with open(file_path, "w") as f:
+            f.write(content)
+    except Exception as e:
+        sys.stderr.write(f"Error writing to {file_path}: {e}\n")
+        sys.exit(1)
+
+
+def verify_constants_file(repo_root: Path, spec: Spec, otp_version_path: Path, file_path: Path) -> None:
+    try:
+        with open(file_path, "r") as f:
+            current_content = f.read()
+    except FileNotFoundError:
+        sys.stderr.write(f"Error: file not found: {file_path}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"Error reading {file_path}: {e}\n")
+        sys.exit(1)
+
+    expected_content = generate_file_content(repo_root, spec, otp_version_path)
+
+    if current_content != expected_content:
+        diff = difflib.unified_diff(
+            current_content.splitlines(keepends=True),
+            expected_content.splitlines(keepends=True),
+            fromfile=str(file_path),
+            tofile="expected",
+        )
+        sys.stderr.write("".join(diff))
+        sys.exit(1)
+
+
+def parse_args(repo_root: Path) -> argparse.Namespace:
+    default_spec = repo_root / "buck2" / "constants.spec"
+    default_output_file = repo_root / "buck2" / "constants.bzl"
+    default_otp_version = repo_root / "OTP_VERSION"
+
+    parser = argparse.ArgumentParser(
+        description="Extract variable definitions from .mk files"
+    )
+    parser.add_argument(
+        "--spec",
+        default=default_spec,
+        help=f"JSON specification of constants (default: buck2/constants.spec)",
+    )
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Update buck2/constants.bzl file",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify file matches expected content instead of updating",
+    )
+    parser.add_argument(
+        "--file",
+        "-f",
+        type=Path,
+        default=default_output_file,
+        help=f"Output file (default: buck2/constants.bzl)",
+    )
+    parser.add_argument(
+        "--otp-version",
+        type=Path,
+        default=default_otp_version,
+        help=f"Path to OTP_VERSION file (default: OTP_VERSION)",
+    )
+
+    args = parser.parse_args()
+
+    if args.replace and args.verify:
+        parser.error("--replace and --verify are mutually exclusive")
+
+    if args.file != default_output_file and not (args.replace or args.verify):
+        parser.error("--file requires either --replace or --verify")
+
+    return args
+
+
+def main() -> None:
+    repo_root = find_repo_root()
+    args = parse_args(repo_root)
+
+    try:
+        with open(args.spec, "r") as f:
+            spec = json.load(f)
+    except FileNotFoundError:
+        sys.stderr.write(f"Error: file not found: {args.spec}\n")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"Error parsing spec: {e}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"Error reading spec: {e}\n")
+        sys.exit(1)
+
+    if args.replace:
+        update_constants_file(repo_root, spec, args.otp_version, args.file)
+    elif args.verify:
+        verify_constants_file(repo_root, spec, args.otp_version, args.file)
+    else:
+        content = generate_file_content(repo_root, spec, args.otp_version)
+        print(content)
+
+
+if __name__ == "__main__":
+    main()
