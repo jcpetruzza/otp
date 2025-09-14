@@ -1,0 +1,25 @@
+load("@otp//buck2:erlang.bzl", "erlang_bootstrap_app")
+
+erlang_bootstrap_app(
+    name = "prebuilt_kernel",
+    app_name = "kernel",
+    beams = glob(["lib/kernel/ebin/*.beam"]),
+    include = glob(["lib/kernel/include/*.hrl"]),
+    app_file = "lib/kernel/ebin/kernel.app",
+)
+
+erlang_bootstrap_app(
+    name = "prebuilt_stdlib",
+    app_name = "stdlib",
+    beams = glob(["lib/stdlib/ebin/*.beam"]),
+    include = glob(["lib/stdlib/include/*.hrl"]),
+    app_file = "lib/stdlib/ebin/stdlib.app",
+)
+
+erlang_bootstrap_app(
+    name = "prebuilt_compiler",
+    app_name = "compiler",
+    beams = glob(["lib/compiler/ebin/*.beam"]),
+    include = glob(["lib/compiler/include/*.hrl"]),
+    app_file = "lib/compiler/ebin/compiler.app",
+)

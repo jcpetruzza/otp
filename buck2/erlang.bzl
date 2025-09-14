@@ -1,3 +1,4 @@
+load("@prelude//erlang:erlang_info.bzl", "ErlangAppInfo")
 load("@prelude//paths.bzl", "paths")
 
 ErtsReleaseInfo = provider(
@@ -50,4 +51,53 @@ erts_release = rule(
         "bins": attrs.list(attrs.source()),
         "internal_bins": attrs.list(attrs.source()),
     }
+)
+
+ErlangBootstrapAppInfo = provider(
+    fields = {
+        "name": provider_field(str),
+        "app_file": provider_field(Artifact),
+        "beams": provider_field(list[Artifact]),
+        "include": provider_field(list[Artifact], default=[]),
+    }
+)
+
+def _erlang_bootstrap_app_impl(ctx: AnalysisContext):
+    app_name = ctx.attrs.app_name
+    if app_name == None:
+        app_name = ctx.attrs.name
+
+    app_file = ctx.attrs.app_file
+    beams = ctx.attrs.beams
+    include = ctx.attrs.include
+
+    if app_file.extension != ".app":
+        fail("Wrong extension for app_file {}".format(app_file))
+
+    non_beam_files = [a for a in beams if a.extension != ".beam"]
+    if non_beam_files:
+        fail("Unexecpted file in 'beams': {}".format(non_beam_files[0].short_path()))
+
+    extra_includes = [a for a in include if a.extension != ".hrl"]
+    if extra_includes:
+        fail("Unexecpted file in 'include': {}".format(extra_includes[0].short_path()))
+
+    return [
+        DefaultInfo(),
+        ErlangBootstrapAppInfo(
+            name = app_name,
+            beams = beams,
+            include = include,
+            app_file = app_file,
+        )
+    ]
+
+erlang_bootstrap_app = rule(
+    impl = _erlang_bootstrap_app_impl,
+    attrs = {
+        "app_name": attrs.option(attrs.string(), default=None),
+        "app_file": attrs.source(),
+        "beams": attrs.list(attrs.source()),
+        "include": attrs.list(attrs.source(), default=[]),
+    },
 )
