@@ -1,3 +1,5 @@
+load("@otp//buck2/autotools:defs.bzl", "target_triple")
+
 def _alloc_types_impl(ctx: AnalysisContext):
     src = ctx.attrs.src
     script = ctx.attrs._script[RunInfo]
@@ -195,5 +197,45 @@ beam_opcodes = rule(
         "_wordsize": attrs.int(default = _wordsize()),
         "_jit": attrs.bool(default = _is_jit()),
         "_vm_probes": attrs.bool(default = _vm_probes()),
+    },
+)
+
+def _erl_version_impl(ctx: AnalysisContext):
+    output = ctx.actions.declare_output(ctx.attrs.name)
+
+    cmd = cmd_args(
+        ctx.attrs._wrapper[RunInfo],
+        ctx.attrs.otp,
+        ctx.attrs.vsn,
+        ctx.attrs._target_triple,
+        ctx.attrs._script[RunInfo],
+        "-o",
+        output.as_output()
+    )
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(default_output=output)
+    ]
+
+erl_version = rule(
+    impl = _erl_version_impl,
+    attrs = {
+        "vsn": attrs.source(),
+        "otp": attrs.source(),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//erts/emulator/utils:make_version",
+        ),
+        "_wrapper": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//buck2/codegen:run-make-version",
+        ),
+        "_target_triple": attrs.string(default = target_triple()),
     },
 )

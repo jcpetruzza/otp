@@ -1,0 +1,5 @@
+sh_binary(
+    name = "run-make-version",
+    main = "run-make-version.sh",
+    visibility = ["PUBLIC"],
+)

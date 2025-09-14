@@ -83,6 +83,7 @@ cxx_library(
             "erl_alloc_types.h": ":alloc_types[erl_alloc_types.h]",
             "erl_atom_table.h": ":tables[erl_atom_table.h]",
             "erl_bif_table.h": ":tables[erl_bif_table.h]",
+            "erl_version.h": "otp//erts:erl_version.h",
 
             "erl_md5.h": "openssl/include/erl_md5.h",
             "openssl_local/md5.h": "openssl/include/openssl_local/md5.h",

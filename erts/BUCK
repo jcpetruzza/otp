@@ -1,5 +1,6 @@
 load("@otp//buck2/autotools:defs.bzl", "configure")
 load("@otp//buck2/cxx.bzl", "strip_include_prefix")
+load("@otp//buck2/codegen:defs.bzl", "erl_version")
 
 configure(
     name = "config",
@@ -18,6 +19,13 @@ configure(
             "otp//make:autoconf/config.sub",
         ],
     },
+)
+
+erl_version(
+    name = "erl_version.h",
+    otp = ":config[make/otp.mk]",
+    vsn = "vsn.mk",
+    visibility = ["PUBLIC"],
 )
 
 cxx_library(
