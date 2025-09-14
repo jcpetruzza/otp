@@ -25,7 +25,7 @@
 %%%-------------------------------------------------------------------
 -module(ewgi_api).
 
--include_lib("ewgi.hrl").
+-include("ewgi.hrl").
 
 -export([get_all_headers/1, get_all_data/1]).
 
