@@ -1,0 +1,56 @@
+load("@otp//buck2:cxx.bzl", "flatten_includes")
+
+cxx_library(
+    name = "lib",
+    srcs = glob(["*.c"]),
+    headers = (
+        {
+            "config.h": "otp//erts:config.h",
+            "pcre2_match_loop_break_cases.gen.h": ":pcre2_match_loop_break_cases.gen.h",
+        } | flatten_includes(
+            glob(
+                ["*.h"],
+
+                # *.gen.h files will exist when using autotools to build otp
+                exclude = glob(["*.gen.h"]),
+            ),
+        )
+    ) + select({
+        "otp//buck2/config/emu_type:debug": {
+            "pcre2_match_yield_coverage.gen.h": ":pcre2_match_yield_coverage.gen.h"
+        },
+        "DEFAULT": {},
+    }),
+    header_namespace = "",
+    compiler_flags = ["-DERLANG_INTEGRATION"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+genrule(
+    name = "pcre2_match_loop_break_cases.gen.h",
+    cmd = """
+    for line in `grep -n 'COST_CHK(' $SRCS | grep -E -v 'define|DBG_FAKE_' | awk -F: '{print $1}'`;
+        do
+            echo "case $line: goto L_LOOP_COUNT_${line};";
+        done > $OUT
+    """,
+    srcs = ["pcre2_match.c"],
+    out = "pcre2_match_loop_break_cases.gen.h"
+)
+
+genrule(
+    name = "pcre2_match_yield_coverage.gen.h",
+    cmd = """
+        INDEX=0
+        for line in `grep -n 'COST_CHK(' $SRCS | grep -v 'define' | awk -F: '{print $1}'`
+        do
+            echo "#define ERLANG_YIELD_POINT_${line} $INDEX"
+            echo "$line,"
+            INDEX=`expr $INDEX + 1`
+        done > $OUT
+        echo "#define ERLANG_YIELD_POINT_CNT $INDEX" >> $OUT
+    """,
+    srcs = ["pcre2_match.c"],
+    out = "pcre2_match_yield_coverage.gen.h",
+)
