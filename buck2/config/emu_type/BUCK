@@ -1,0 +1,47 @@
+config_setting(
+    name = "asan",
+    constraint_values = ["otp//buck2/constraints/emu_type:asan"],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "debug",
+    constraint_values = [ "otp//buck2/constraints/emu_type:debug" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "frmptr",
+    constraint_values = [ "otp//buck2/constraints/emu_type:frmptr" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "gcov",
+    constraint_values = [ "otp//buck2/constraints/emu_type:gcov" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "gprof",
+    constraint_values = [ "otp//buck2/constraints/emu_type:gprof" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "icount",
+    constraint_values = [ "otp//buck2/constraints/emu_type:icount" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "lcnt",
+    constraint_values = [ "otp//buck2/constraints/emu_type:lcnt" ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "valgrind",
+    constraint_values = [ "otp//buck2/constraints/emu_type:valgrind" ],
+    visibility = ["PUBLIC"],
+)

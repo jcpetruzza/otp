@@ -1,0 +1,52 @@
+constraint_setting(
+    name = "emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "asan",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "debug",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "frmptr",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "gcov",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "gprof",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "icount",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "lcnt",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "valgrind",
+    constraint_setting = ":emu_type",
+    visibility = ["PUBLIC"],
+)

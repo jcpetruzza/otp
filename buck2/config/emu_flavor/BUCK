@@ -1,0 +1,29 @@
+config_setting(
+    name = "emu",
+    constraint_values = ["otp//buck2/constraints/emu_flavor:emu"],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "jit",
+    constraint_values = ["otp//buck2/constraints/emu_flavor:jit"],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "jit-x86_64",
+    constraint_values = [
+        "otp//buck2/constraints/emu_flavor:jit",
+        "config//cpu/constraints:x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "jit-aarch64",
+    constraint_values = [
+        "otp//buck2/constraints/emu_flavor:jit",
+        "config//cpu/constraints:arm64",
+    ],
+    visibility = ["PUBLIC"],
+)

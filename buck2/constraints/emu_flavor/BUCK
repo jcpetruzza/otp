@@ -1,0 +1,16 @@
+constraint_setting(
+    name = "emu_flavor",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "emu",
+    constraint_setting = ":emu_flavor",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "jit",
+    constraint_setting = ":emu_flavor",
+    visibility = ["PUBLIC"],
+)
