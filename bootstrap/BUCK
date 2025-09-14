@@ -1,4 +1,36 @@
-load("@otp//buck2:erlang.bzl", "erlang_bootstrap_app")
+load("@otp//buck2:erlang.bzl", "erlang_bootstrap_app", "erts_release", "erlang_otp_release")
+
+# bootstrap-0 uses pre-built versions of kernel, stdlib and compiler
+erlang_otp_release(
+    name = "bootstrap-0",
+    erts = ":erts",
+    boots = [
+        "bin/start.boot",
+        "bin/no_dot_erlang.boot",
+    ],
+    apps = [
+        ":prebuilt_kernel",
+        ":prebuilt_stdlib",
+        ":prebuilt_compiler",
+    ],
+    bootstrapping = True,
+    visibility = ["PUBLIC"],
+)
+
+erts_release(
+    name = "erts",
+    erl = "otp//erts/etc:dyn_erl",
+    beam = "otp//erts/emulator:beam",
+    bins = [
+        "otp//erts/etc:erlc",
+        "otp//erts/etc:escript",
+    ],
+    internal_bins = [
+        "otp//erts/etc:erlexec",
+        "otp//erts/etc:inet_gethost",
+        "otp//erts/emulator:erl_child_setup",
+    ],
+)
 
 erlang_bootstrap_app(
     name = "prebuilt_kernel",

@@ -101,3 +101,107 @@ erlang_bootstrap_app = rule(
         "include": attrs.list(attrs.source(), default=[]),
     },
 )
+
+def _get_app_name(app: Dependency) -> str:
+    if ErlangAppInfo in app:
+        return app[ErlangAppInfo].name
+    elif ErlangBootstrapAppInfo in app:
+        return app[ErlangBootstrapAppInfo].name
+    else:
+        fail("Dependency not an app: {}".format(app))
+
+ErlangOtpReleaseInfo = provider(
+    fields = {
+        "apps": provider_field(list[Dependency]),
+    }
+)
+
+def _erlang_otp_release_impl(ctx: AnalysisContext):
+    erts = ctx.attrs.erts[ErtsReleaseInfo]
+    boots =  ctx.attrs.boots
+    bootstrapping = ctx.attrs.bootstrapping
+
+    erts_dir = ctx.actions.copy_dir(erts.output.basename(), erts.output)
+    boot_dir = ctx.actions.copied_dir("boot", _indexed_by_basename(boots))
+
+    def erts_dir_bin_version(bin: Artifact) -> Artifact:
+        return erts_dir.project("bin").project(bin.basename())
+
+    bin_files = {"erl": erts_dir_bin_version(erts.erl)}
+    bin_files.update({bin.basename(): erts_dir_bin_version(bin) for bin in erts.bins})
+    bin_files.update({boot.basename(): boot_dir.project(boot.basename()) for boot in boots})
+    bin_dir = ctx.actions.symlinked_dir("bin", bin_files)
+
+    if ctx.attrs.extends:
+        base_release = ctx.attrs.extends[ErlangOtpReleaseInfo]
+        apps = {_get_app_name(app): app for app in base_release.apps}
+    else:
+        apps = {}
+
+    for app in ctx.attrs.apps:
+        apps[_get_app_name(app)] = app
+
+    lib_files = {}
+    for app in apps.values():
+        if ErlangBootstrapAppInfo in app:
+            if not bootstrapping:
+                fail("Prebuilt app used in non-bootstrapping release")
+
+            app = app[ErlangBootstrapAppInfo]
+            lib_files.update(_indexed_by_basename(
+                app.beams + [app.app_file],
+                prefix = paths.join(app.name, "ebin"),
+            ))
+
+            if app.include:
+                lib_files.update(_indexed_by_basename(
+                    app.include,
+                    prefix = paths.join(app.name, "include"),
+                ))
+        elif ErlangAppInfo in app:
+            app = app[ErlangAppInfo]
+            app_name = "{}-{}".format(app.name, app.version) if not bootstrapping and app.version else app.name
+            lib_files[app_name] = app.app_folder
+        else:
+            fail("Unsupported dep {} of type {}".format(app, type(app)))
+
+    lib_dir = ctx.actions.symlinked_dir("lib", lib_files)
+
+    release = [bin_dir, lib_dir, erts_dir]
+    otp_dir = ctx.actions.symlinked_dir("otp", _indexed_by_basename(release))
+
+    def project_bin(name: str) -> Artifact:
+       return bin_dir.project(name).with_associated_artifacts(release)
+
+    def make_bin_sub_target(exe: Artifact):
+        return [
+            DefaultInfo(default_output = exe),
+            RunInfo(args = cmd_args(exe)),
+        ]
+
+    sub_targets = {
+        "erl": make_bin_sub_target(project_bin("erl")),
+    }
+    for bin in erts.bins:
+        bin_name = bin.basename()
+        sub_targets[bin_name] = make_bin_sub_target(project_bin(bin_name))
+
+    return [
+        DefaultInfo(
+            default_output = otp_dir,
+            sub_targets = sub_targets,
+        ),
+        ErlangOtpReleaseInfo(apps = apps.values()),
+        RunInfo(args = cmd_args(project_bin("erl"))),
+    ]
+
+erlang_otp_release = rule(
+    impl = _erlang_otp_release_impl,
+    attrs = {
+        "erts": attrs.dep(providers=[ErtsReleaseInfo]),
+        "extends": attrs.option(attrs.dep(providers=[ErlangOtpReleaseInfo]), default=None),
+        "apps": attrs.list(attrs.dep()),
+        "boots": attrs.list(attrs.source(), default=[]),
+        "bootstrapping": attrs.bool(default=False),
+    },
+)
