@@ -1,0 +1,9 @@
+cxx_library(
+    name = "lib",
+    srcs = glob(["*.c"]),
+    headers = glob(["*.h"]),
+    exported_headers = ["ryu.h"],
+    header_namespace = "",
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
