@@ -9,7 +9,7 @@ def cxx_tools_info():
     return "prelude//toolchains/cxx/clang:path_clang_tools"
 
 
-def c_flags():
+def c_flags(*, exclude_c_warns=False):
     COMMON = [
         "-DHAVE_CONFIG_H",
         "-D_GNU_SOURCE",
@@ -40,6 +40,9 @@ def c_flags():
         "-g",
 
         "-Wall",
+    ]
+
+    C_WARNS = [
         "-Wstrict-prototypes",
         "-Wpointer-arith",
         "-Wmissing-prototypes",
@@ -118,6 +121,7 @@ def c_flags():
 
     return (
         COMMON +
+        (C_WARNS if not exclude_c_warns else []) +
         FLAVOR +
         DEBUG_TYPE +
         GCOV_TYPE +
@@ -132,6 +136,14 @@ def c_flags():
         _jump_table_flags() +
         _inline_flags()
     )
+
+def cxx_flags():
+    COMMON = [
+        "-std=c++17",
+        "-D_GLIBCXX_ASSERTIONS",
+        "-g",
+    ]
+    return COMMON + c_flags(exclude_c_warns=True)
 
 def _opt_flags():
     return select({

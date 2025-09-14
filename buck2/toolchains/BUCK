@@ -4,7 +4,7 @@ load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "sy
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("erlang.bzl", "system_erlang_toolchain")
-load("cxx.bzl", "cxx_tools_info", "c_flags", "link_flags")
+load("cxx.bzl", "cxx_tools_info", "c_flags", "cxx_flags", "link_flags")
 
 system_genrule_toolchain(
     name = "genrule",
@@ -14,6 +14,7 @@ system_genrule_toolchain(
 system_cxx_toolchain(
     name = "cxx",
     c_flags = c_flags(),
+    cxx_flags = cxx_flags(),
     link_flags = link_flags(),
     visibility = ["PUBLIC"],
     _cxx_tools_info = cxx_tools_info(),
