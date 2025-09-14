@@ -1,10 +1,4 @@
 sh_binary(
-    name = "run-make-version",
-    main = "run-make-version.sh",
-    visibility = ["PUBLIC"],
-)
-
-sh_binary(
     name = "run-make-driver",
     main = "run-make-driver.sh",
     visibility = ["PUBLIC"],

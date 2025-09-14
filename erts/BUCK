@@ -1,4 +1,5 @@
 load("@otp//buck2/autotools:defs.bzl", "configure")
+load("@otp//buck2/constants.bzl", "OTP_VERSION", "VSN")
 load("@otp//buck2/cxx.bzl", "strip_include_prefix")
 load("@otp//buck2/codegen:defs.bzl", "erl_version")
 load("@otp//buck2/erlang.bzl", "erts_release")
@@ -32,16 +33,12 @@ configure(
     name = "config",
     script = "configure",
     srcs = {
-        "": [
-            "otp//:OTP_VERSION",
-        ],
         "erts": [
             "config.h.in",
             "include/erl_int_sizes_config.h.in",
             "include/internal/ethread_header_config.h.in",
             ],
         "make": [
-            "otp//make:otp.mk.in",
             "otp//make:autoconf/config.sub",
         ],
     },
@@ -55,8 +52,8 @@ alias(
 
 erl_version(
     name = "erl_version.h",
-    otp = ":config[make/otp.mk]",
-    vsn = "vsn.mk",
+    otp_version = OTP_VERSION,
+    vsn = VSN,
     visibility = ["PUBLIC"],
 )
 

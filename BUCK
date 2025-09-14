@@ -2,7 +2,7 @@
 
 export_file(
     name = "OTP_VERSION",
-    visibility = ["otp//erts:config"],
+    visibility = ["PUBLIC"],
 )
 
 alias(
