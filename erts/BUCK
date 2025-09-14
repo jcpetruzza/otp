@@ -1,4 +1,5 @@
 load("@otp//buck2/autotools:defs.bzl", "configure")
+load("@otp//buck2/cxx.bzl", "strip_include_prefix")
 
 configure(
     name = "config",
@@ -16,15 +17,26 @@ cxx_library(
         "config//os:windows": glob(["lib_src/win/*.c"]),
         "DEFAULT": glob(["lib_src/pthread/*.c"]),
     }),
-    exported_headers = dict(
-        [
-            ("config.h", ":config[config.h]"),
-            ("erl_int_sizes_config.h", ":config[include/erl_int_sizes_config.h]"),
-            ("ethread_header_config.h", ":config[include/internal/ethread_header_config.h]"),
-        ] + [
-            (h.removeprefix("include/internal/"), h)
-            for h in glob(["include/internal/**/*.h"])
-        ]),
+    exported_headers =
+        {
+            "config.h": ":config[config.h]",
+            "erl_int_sizes_config.h": ":config[include/erl_int_sizes_config.h]",
+            "ethread_header_config.h": ":config[include/internal/ethread_header_config.h]",
+        } |
+        strip_include_prefix(
+            "include/internal/",
+            glob([
+                "include/internal/*.h",
+                "include/internal/gcc/*.h",
+                "include/internal/i386/*.h",
+                "include/internal/libatomic_ops/*.h",
+                "include/internal/ppc32/*.h",
+                "include/internal/pthread/*.h",
+                "include/internal/tile/*.h",
+                "include/internal/win/*.h",
+                "include/internal/x86_64/*.h",
+            ])
+        ),
     header_namespace = "",
     visibility = ["PUBLIC"],
     link_style = "static",
