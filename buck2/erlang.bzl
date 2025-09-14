@@ -1,5 +1,6 @@
 load("@prelude//erlang:erlang_info.bzl", "ErlangAppInfo")
 load("@prelude//paths.bzl", "paths")
+load("@otp//buck2/constants.bzl", "VSN")
 
 ErtsReleaseInfo = provider(
     fields = {
@@ -24,14 +25,14 @@ def _erts_release_impl(ctx: AnalysisContext):
     beam = ctx.attrs.beam
     bins = ctx.attrs.bins
     internal_bins = ctx.attrs.internal_bins
+    version = ctx.attrs.version
 
     files = {"bin/beam.smp": beam}
     files.update(_indexed_by_basename([erl], prefix = "bin"))
     files.update(_indexed_by_basename(bins, prefix = "bin"))
     files.update(_indexed_by_basename(internal_bins, prefix = "bin"))
 
-    # Ideally we'd use "erts-VSN" for name, but not easily available atm
-    erts_dir = ctx.actions.copied_dir("erts-buck2", files)
+    erts_dir = ctx.actions.copied_dir("erts-{}".format(version), files)
     erts_bin_dir = erts_dir.project("bin")
 
     return [
@@ -50,6 +51,7 @@ erts_release = rule(
         "beam": attrs.source(),
         "bins": attrs.list(attrs.source()),
         "internal_bins": attrs.list(attrs.source()),
+        "version": attrs.string(default=VSN),
     }
 )
 
