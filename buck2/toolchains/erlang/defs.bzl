@@ -31,7 +31,12 @@ def system_erlang_toolchain(*, name: str):
         visibility = ["PUBLIC"],
     )
 
-def local_erlang_toolchain(*, name: str, otp_release: str, extra_erl_opts: list[str] = []):
+def local_erlang_toolchain(*,
+    name: str,
+    otp_release: str,
+    extra_erl_opts: list[str] = [],
+    toolchain_utilities: [None, str] = None
+):
     native.erlang_otp_binaries(
         name = "{}-binaries".format(name),
         erl = "{}[erl]".format(otp_release),
@@ -45,5 +50,6 @@ def local_erlang_toolchain(*, name: str, otp_release: str, extra_erl_opts: list[
         emu_flags = " ".join(_COMMON_EMU_FLAGS),
         parse_transforms_filters = {},
         parse_transforms = [],
+        toolchain_utilities = toolchain_utilities,
         visibility = ["PUBLIC"],
     )

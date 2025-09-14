@@ -1,0 +1,15 @@
+load(
+    "defs.bzl",
+    "system_erlang_toolchain",
+    "local_erlang_toolchain",
+)
+
+local_erlang_toolchain(
+    name = "bootstrap-0",
+    otp_release = "otp//bootstrap:bootstrap-0",
+    toolchain_utilities = "toolchains//erlang:erlang-bootstrap-utils",
+)
+
+system_erlang_toolchain(
+    name = "system",
+)
