@@ -1,6 +1,13 @@
-load("@otp//buck2/codegen:defs.bzl", "alloc_types")
+load("@otp//buck2/codegen:defs.bzl", "alloc_types", "tables")
 
 alloc_types(
     name = "alloc_types",
     src = "beam/erl_alloc.types",
+)
+
+tables(
+    name = "tables",
+    atoms = "beam/atom.names",
+    bifs = "beam/bif.tab",
+    dirty_bifs = "beam/erl_dirty_bif.tab",
 )

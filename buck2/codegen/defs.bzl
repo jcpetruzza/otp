@@ -48,3 +48,63 @@ alloc_types = rule(
         "_types": attrs.list(attrs.string(), default=_alloc_types_list()),
     }
 )
+
+def _tables_impl(ctx: AnalysisContext):
+    script = ctx.attrs._script[RunInfo]
+
+    outputs = {
+        name: ctx.actions.declare_output(name)
+        for name in [
+            "erl_atom_table.c",
+            "erl_atom_table.h",
+            "erl_bif_list.h",
+            "erl_bif_table.c",
+            "erl_bif_table.h",
+            "erl_dirty_bif_wrap.c",
+            "erl_guard_bifs.c",
+        ]
+    }
+    out_dir = cmd_args(outputs.values()[0].as_output(), parent=1)
+
+    cmd = cmd_args(
+        script, "-src", out_dir, "-include", out_dir, "-dst", "no",
+        hidden = [out.as_output() for out in outputs.values()]
+    )
+    cmd.add("-jit", "yes" if ctx.attrs._jit else "no")
+    cmd.add(ctx.attrs.atoms)
+    cmd.add(ctx.attrs.bifs)
+    cmd.add(ctx.attrs.dirty_bifs)
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(
+            default_outputs = outputs.values(),
+            sub_targets = {
+                name: [DefaultInfo(default_output = output)]
+                for name, output in outputs.items()
+            },
+        ),
+    ]
+
+tables = rule(
+    impl = _tables_impl,
+    attrs = {
+        "atoms": attrs.source(),
+        "bifs": attrs.source(),
+        "dirty_bifs": attrs.source(),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//erts/emulator/utils:make_tables"
+        ),
+        "_jit": attrs.bool(default = select({
+            "otp//buck2/config/emu_flavor:jit": True,
+            "otp//buck2/config/emu_flavor:emu": False,
+        })),
+    }
+
+)
