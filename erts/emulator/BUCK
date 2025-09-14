@@ -105,3 +105,41 @@ cxx_library(
     header_namespace = "",
     visibility = ["PUBLIC"],
 )
+
+cxx_binary(
+    name = "erl_child_setup",
+    srcs = [
+        "beam/hash.c",
+        "sys/unix/erl_child_setup.c",
+        "sys/unix/sys_uds.c",
+    ],
+    deps = [
+        ":headers"
+    ],
+    visibility = ["PUBLIC"],
+)
+
+genrule(
+    name = "erl_poll.flbk.c",
+    cmd = """
+    echo '#define ERTS_NO_KERNEL_POLL_VERSION"' > $OUT
+    cat $SRCS >> $OUT
+    """,
+    srcs = ["sys/common/erl_poll.c"],
+    out = "erl_poll.flbk.c",
+)
+
+cxx_library(
+    name = "sys",
+    srcs = glob(["sys/common/*.c", "sys/unix/*.c"], exclude = [
+        "sys/unix/erl_child_setup.c",
+        "sys/unix/erl_main.c",
+    ]) + [
+        ":erl_poll.flbk.c",
+    ],
+    deps = [
+        ":headers",
+        "otp//erts:common",
+    ],
+    link_style = "static",
+)
