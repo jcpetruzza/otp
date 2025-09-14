@@ -20,6 +20,11 @@
 [parser]
   target_platform_detector_spec = target:otp//...->prelude//platforms:default
 
+[project]
+  ignore = \
+    .git, \
+    **/.DS_Store,
+
 [build]
   execution_platforms = prelude//platforms:default
 
