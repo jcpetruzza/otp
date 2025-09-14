@@ -1,8 +1,63 @@
-load("@otp//buck2/codegen:defs.bzl", "alloc_types", "tables")
+load(
+    "@otp//buck2/codegen:defs.bzl",
+    "alloc_types",
+    "beam_opcodes",
+    "tables",
+)
 
 alloc_types(
     name = "alloc_types",
     src = "beam/erl_alloc.types",
+)
+
+beam_opcodes(
+    name = "opcodes-emu",
+    small_code_model = False,
+    srcs = [
+        "otp//lib/compiler:src/genop.tab",
+        "beam/predicates.tab",
+        "beam/generators.tab",
+        "beam/emu/ops.tab",
+        "beam/emu/predicates.tab",
+        "beam/emu/generators.tab",
+        "beam/emu/macros.tab",
+        "beam/emu/instrs.tab",
+        "beam/emu/arith_instrs.tab",
+        "beam/emu/bif_instrs.tab",
+        "beam/emu/bs_instrs.tab",
+        "beam/emu/float_instrs.tab",
+        "beam/emu/map_instrs.tab",
+        "beam/emu/msg_instrs.tab",
+        "beam/emu/select_instrs.tab",
+        "beam/emu/trace_instrs.tab",
+    ],
+    compatible_with = [
+        "otp//buck2/constraints/emu_flavor:emu"
+    ],
+)
+
+beam_opcodes(
+    name = "opcodes-jit",
+    small_code_model = False,
+    srcs = [
+        "otp//lib/compiler:src/genop.tab",
+        "beam/predicates.tab",
+        "beam/generators.tab",
+    ] + select({
+        "@otp//buck2/config/emu_flavor:jit-x86_64": [
+            "beam/jit/x86/ops.tab",
+            "beam/jit/x86/predicates.tab",
+            "beam/jit/x86/generators.tab",
+        ],
+        "@otp//buck2/config/emu_flavor:jit-aarch64": [
+            "beam/jit/arm/ops.tab",
+            "beam/jit/arm/predicates.tab",
+            "beam/jit/arm/generators.tab",
+        ],
+    }),
+    compatible_with = [
+        "otp//buck2/constraints/emu_flavor:jit"
+    ],
 )
 
 tables(

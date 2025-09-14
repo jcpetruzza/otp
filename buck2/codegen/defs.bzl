@@ -91,6 +91,12 @@ def _tables_impl(ctx: AnalysisContext):
         ),
     ]
 
+def _is_jit():
+    return select({
+        "otp//buck2/config/emu_flavor:jit": True,
+        "otp//buck2/config/emu_flavor:emu": False,
+    })
+
 tables = rule(
     impl = _tables_impl,
     attrs = {
@@ -101,10 +107,93 @@ tables = rule(
             providers=[RunInfo],
             default="@otp//erts/emulator/utils:make_tables"
         ),
-        "_jit": attrs.bool(default = select({
-            "otp//buck2/config/emu_flavor:jit": True,
-            "otp//buck2/config/emu_flavor:emu": False,
-        })),
+        "_jit": attrs.bool(default = _is_jit()),
     }
 
+)
+
+def _beam_opcodes_impl(ctx: AnalysisContext):
+    script = ctx.attrs._script[RunInfo]
+
+    output_files = [
+        "beam_opcodes.h",
+        "beam_opcodes.c",
+    ]
+    output_files.extend(ctx.attrs._flavor_outputs)
+
+    outputs = {
+        name: ctx.actions.declare_output(name)
+        for name in output_files
+    }
+    out_dir = cmd_args(outputs.values()[0].as_output(), parent=1)
+
+    cmd = cmd_args([script], hidden=[out.as_output() for out in outputs.values()])
+    cmd.add("-wordsize", str(ctx.attrs._wordsize))
+    cmd.add("-code-model", "small" if ctx.attrs.small_code_model else "unknown")
+    cmd.add("-outdir", out_dir)
+    cmd.add("-jit", "yes" if ctx.attrs._jit else "no")
+    cmd.add("-DUSE_VM_PROBES={}".format(1 if ctx.attrs._vm_probes else 0))
+    cmd.add("-emulator", ctx.attrs.srcs)
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(
+            default_outputs = outputs.values(),
+            sub_targets = {
+                name: [DefaultInfo(default_output = out)]
+                for name, out in outputs.items()
+            },
+        ),
+    ]
+
+def _beamops_flavor_outputs():
+    return select({
+        "otp//buck2/config/emu_flavor:emu": [
+            "beam_cold.h",
+            "beam_warm.h",
+            "beam_hot.h",
+        ],
+
+        "otp//buck2/config/emu_flavor:jit": [
+            "beamasm_emit.h",
+            "beamasm_protos.h",
+        ],
+    })
+
+def _wordsize():
+    return select({
+        "config//cpu:x86_64": 64,
+        "config//cpu:x86_32": 32,
+        "config//cpu:arm64": 64,
+        "config//cpu:arm32": 32,
+    })
+
+def _vm_probes():
+    return select({
+        "otp//buck2/config/dynamic-trace:dtrace": True,
+        "otp//buck2/config/dynamic-trace:lttng": True,
+        "otp//buck2/config/dynamic-trace:systemtap": True,
+        "DEFAULT": False,
+    })
+
+beam_opcodes = rule(
+    impl = _beam_opcodes_impl,
+    attrs = {
+        "srcs": attrs.list(attrs.source()),
+        "small_code_model": attrs.bool(),
+        "_defines": attrs.dict(attrs.string(), attrs.string(), default={}),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//erts/emulator/utils:beam_makeops",
+        ),
+        "_flavor_outputs": attrs.list(attrs.string(), default = _beamops_flavor_outputs()),
+        "_wordsize": attrs.int(default = _wordsize()),
+        "_jit": attrs.bool(default = _is_jit()),
+        "_vm_probes": attrs.bool(default = _vm_probes()),
+    },
 )
