@@ -13,9 +13,16 @@ local_erlang_toolchain(
 
 system_erlang_toolchain(
     name = "system",
+    toolchain_utilities = "toolchains//erlang:erlang-utils",
 )
 
 erlang_toolchain_utilities_override(
     name = "erlang-bootstrap-utils",
+    app_src_script = "otp_app_src_builder.erl",
     dependency_analyzer = "bootstrap_dependency_analyzer.erl",
+)
+
+erlang_toolchain_utilities_override(
+    name = "erlang-utils",
+    app_src_script = "otp_app_src_builder.erl",
 )

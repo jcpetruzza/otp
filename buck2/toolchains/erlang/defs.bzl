@@ -17,7 +17,7 @@ _COMMON_EMU_FLAGS = [
     "very_short",
 ]
 
-def system_erlang_toolchain(*, name: str):
+def system_erlang_toolchain(*, name: str, toolchain_utilities: [None, str] = None):
     native.erlang_otp_binaries(
         name = "{}-binaries".format(name),
         erl = "local/erl",
@@ -32,6 +32,7 @@ def system_erlang_toolchain(*, name: str):
         emu_flags = " ".join(_COMMON_EMU_FLAGS),
         parse_transforms_filters = {},
         parse_transforms = [],
+        toolchain_utilities = toolchain_utilities,
         visibility = ["PUBLIC"],
     )
 
@@ -60,7 +61,11 @@ def local_erlang_toolchain(*,
 
 def _erlang_toolchain_utilities_override_impl(ctx: AnalysisContext):
     base = ctx.attrs._base[ErlangToolchainUtilsInfo]
-    override_keys = ["dependency_analyzer", "dependency_finalizer"]
+    override_keys = [
+        "app_src_script",
+        "dependency_analyzer",
+        "dependency_finalizer",
+    ]
 
     utils = {k: getattr(base, k) for k in dir(base)}
 
@@ -78,6 +83,7 @@ erlang_toolchain_utilities_override = rule(
     impl = _erlang_toolchain_utilities_override_impl,
     attrs = {
         "_base": attrs.dep(providers=[ErlangToolchainUtilsInfo], default = "@prelude//erlang/toolchain:toolchain_utilities"),
+        "app_src_script": attrs.option(attrs.source(), default=None),
         "dependency_analyzer": attrs.option(attrs.source(), default=None),
         "dependency_finalizer": attrs.option(attrs.source(), default=None),
     },
