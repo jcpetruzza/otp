@@ -1,0 +1,6 @@
+load("@otp//buck2/codegen:defs.bzl", "alloc_types")
+
+alloc_types(
+    name = "alloc_types",
+    src = "beam/erl_alloc.types",
+)
