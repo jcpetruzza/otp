@@ -1,0 +1,22 @@
+load("@otp//buck2/perl.bzl", "perl_binary")
+
+TOOLS = [
+    "beam_emu_vars",
+    "beam_makeops",
+    "beam_strip",
+    "make_alloc_types",
+    "make_compiler_flags",
+    "make_driver_tab",
+    "make_preload",
+    "make_tables",
+    "make_version",
+]
+
+[
+    perl_binary(
+        name = tool,
+        src = tool,
+        visibility = ["PUBLIC"],
+    )
+    for tool in TOOLS
+]
