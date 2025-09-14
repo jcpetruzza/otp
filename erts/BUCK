@@ -1,0 +1,11 @@
+load("@otp//buck2/autotools:defs.bzl", "configure")
+
+configure(
+    name = "config",
+    script = "configure",
+    srcs = [
+        "config.h.in",
+        "include/erl_int_sizes_config.h.in",
+        "include/internal/ethread_header_config.h.in",
+    ],
+)

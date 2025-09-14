@@ -1,0 +1,11 @@
+sh_binary(
+    name = "run-configure",
+    main = "run-configure.sh",
+    visibility = ["PUBLIC"],
+)
+
+python_binary(
+    name = "patch-configure",
+    main = "patch-configure.py",
+    visibility = ["PUBLIC"],
+)
