@@ -1,0 +1,155 @@
+load("@otp//buck2:cxx.bzl", "flatten_includes")
+
+_COMMON_HEADERS = flatten_includes(glob(["common/**/*.h"]))
+_UNIX_HEADERS = _COMMON_HEADERS | flatten_includes(glob(["unix/**/*.h"]))
+
+cxx_binary(
+    name = "erlexec",
+    srcs = ["common/erlexec.c"],
+    headers = {"system_vsn.h": ":system_vsn.h"} | _COMMON_HEADERS,
+    header_namespace = "",
+    deps = [
+        "otp//erts:common",
+        "otp//erts/emulator:headers",
+    ],
+    compiler_flags = ["-include", "system_vsn.h"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "erlc",
+    srcs = ["common/erlc.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = [
+        "otp//erts:common",
+        "otp//lib/erl_interface:lib",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "escript",
+    srcs = ["common/escript.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "dyn_erl",
+    srcs = ["unix/dyn_erl.c"],
+    headers = _UNIX_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "heart",
+    srcs = ["common/heart.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "inet_gethost",
+    srcs = ["common/inet_gethost.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "ct_run",
+    srcs = ["common/ct_run.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "dialyzer",
+    srcs = ["common/dialyzer.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "typer",
+    srcs = ["common/typer.c"],
+    headers = _COMMON_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "run_erl",
+    srcs = ["unix/run_erl.c"],
+    headers = _UNIX_HEADERS,
+    header_namespace = "",
+    deps = [
+        "otp//erts:common",
+        ":safe_string",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "to_erl",
+    srcs = ["unix/to_erl.c"],
+    headers = _UNIX_HEADERS,
+    header_namespace = "",
+    deps = [
+        "otp//erts:common",
+        ":safe_string",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "setuid_socket_wrap",
+    srcs = ["unix/setuid_socket_wrap.c"],
+    headers = _UNIX_HEADERS,
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+genrule(
+    name = "system_vsn.h",
+    cmd = """
+        sed -n '/ERLANG_OTP_RELEASE/{s/ERLANG_OTP_RELEASE/OTP_SYSTEM_VERSION/;p;q}' $SRCS > $OUT
+    """,
+    srcs = ["otp//erts:erl_version.h"],
+    out = "system_vsn.h",
+)
+
+cxx_library(
+    name = "safe_string",
+    srcs = ["unix/safe_string.c"],
+    exported_headers = ["unix/safe_string.h"],
+    header_namespace = "",
+    deps = ["otp//erts:common"],
+    link_style = "static",
+)
