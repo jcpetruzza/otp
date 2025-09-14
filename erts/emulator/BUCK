@@ -3,6 +3,7 @@ load(
     "alloc_types",
     "beam_asm_global",
     "beam_opcodes",
+    "preloaded",
     "tables",
 )
 load(
@@ -73,6 +74,11 @@ tables(
     atoms = "beam/atom.names",
     bifs = "beam/bif.tab",
     dirty_bifs = "beam/erl_dirty_bif.tab",
+)
+
+preloaded(
+    name = "preload.c",
+    srcs = "otp//erts/preloaded:ebin",
 )
 
 cxx_library(

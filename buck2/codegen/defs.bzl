@@ -248,3 +248,11 @@ def beam_asm_global(*, name: str, src: str):
         srcs = [src],
         out = name,
     )
+
+def preloaded(*, name: str, srcs: str):
+    native.genrule(
+        name = name,
+        cmd = "$(exe otp//erts/emulator/utils:make_preload) -old $(location {})/* > $OUT".format(srcs),
+        env = {"LANG": "C"},
+        out = name,
+    )

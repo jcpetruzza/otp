@@ -1,0 +1,7 @@
+load("@prelude//paths.bzl", "paths")
+
+filegroup(
+    name = "ebin",
+    srcs = {paths.basename(beam): beam for beam in glob(["ebin/*.beam"])},
+    visibility = ["PUBLIC"],
+)
