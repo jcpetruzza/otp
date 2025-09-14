@@ -1,0 +1,21 @@
+load("@otp//buck2:cxx.bzl", "strip_include_prefix")
+
+cxx_library(
+    name = "headers",
+    exported_headers = strip_include_prefix(
+        "include/",
+        glob(["include/**/*.h"])
+    ),
+    header_namespace = "",
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "lib",
+    srcs = glob(["crypto/md5/*.c"]),
+    exported_deps = [":headers"],
+    header_namespace = "",
+    compiler_flags = ["-DERLANG_OPENSSL_INTEGRATION"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)

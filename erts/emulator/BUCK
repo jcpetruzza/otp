@@ -150,7 +150,10 @@ driver_tab(
 
 cxx_library(
     name = "headers",
-    exported_deps = ["otp//erts:headers"],
+    exported_deps = [
+        "otp//erts:headers",
+        "otp//erts/emulator/openssl:headers",
+    ],
     exported_headers = headers_union(
         flatten_includes(
             glob([
@@ -174,9 +177,6 @@ cxx_library(
             "erl_db_insert_list.ycf.h": ":erl_db_insert_list.ycf.h",
             "erl_map.ycf.h": ":erl_map.ycf.h",
             "utils.ycf.h": ":utils.ycf.h",
-
-            "erl_md5.h": "openssl/include/erl_md5.h",
-            "openssl_local/md5.h": "openssl/include/openssl_local/md5.h",
         },
         select({
             "otp//buck2/config/emu_flavor:emu": {
