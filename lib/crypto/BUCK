@@ -1,0 +1,22 @@
+load("@otp//buck2:cxx.bzl", "flatten_includes")
+
+filegroup(
+    name = "nif_files",
+    srcs = ["c_src/crypto.c"],
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "nif",
+    srcs = glob(["c_src/**/*.c"]),
+    headers = flatten_includes(glob(["c_src/**/*.h"])),
+    header_namespace = "",
+    deps = ["otp//erts/emulator:headers"],
+    compiler_flags = [
+        "-DSTATIC_ERLANG_NIF",
+        "-DDISABLE_EVP_DH=0",
+        "-DDISABLE_EVP_HMAC=0",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)

@@ -1,0 +1,14 @@
+filegroup(
+    name = "nif_files",
+    srcs = glob(["c_src/*_nif.c"]),
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "nif",
+    srcs = glob(["c_src/*.c"]),
+    deps = ["otp//erts/emulator:headers"],
+    compiler_flags = ["-DSTATIC_ERLANG_NIF"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)

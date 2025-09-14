@@ -145,6 +145,10 @@ yielding_c_fun(
 driver_tab(
     name = "driver_tab.c",
     nifs = glob(["nifs/common/*_nif.c"]),
+    static_nifs = [
+        "otp//lib/asn1:nif_files",
+        "otp//lib/crypto:nif_files",
+    ],
     drivers = glob(["drivers/common/*_drv.c"]),
 )
 
