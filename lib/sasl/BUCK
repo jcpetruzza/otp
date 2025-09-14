@@ -1,0 +1,33 @@
+load("@otp//buck2/constants.bzl", "SASL_VSN")
+
+erlang_application(
+    name = "app",
+    app_name = "sasl",
+    app_src = "src/sasl.app.src",
+    version = SASL_VSN,
+
+    srcs = glob(["src/*.erl", "src/*.hrl"]) + [
+        "otp//lib/stdlib:include/erl_compile.hrl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "-Werror",
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-0": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)

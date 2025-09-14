@@ -1,0 +1,6 @@
+export_file(
+    name = "include/erl_compile.hrl",
+    visibility = [
+        "otp//lib/sasl:app",
+    ],
+)
