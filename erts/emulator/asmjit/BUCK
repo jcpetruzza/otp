@@ -1,0 +1,30 @@
+load("@otp//buck2/cxx.bzl", "ASMJIT_FLAGS")
+
+export_file(
+    name = "asmjit.hpp",
+    src = "asmjit.h",
+    out = "asmjit.hpp",
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "headers",
+    exported_headers = glob(["**/*.h"]),
+    header_namespace = "",
+)
+
+cxx_precompiled_header(
+    name = "pch",
+    src = ":asmjit.hpp",
+    deps = [":headers"],
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "lib",
+    srcs = glob(["**/*.cpp"]),
+    precompiled_header = ":pch",
+    compiler_flags = ASMJIT_FLAGS,
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)

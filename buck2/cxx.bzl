@@ -1,5 +1,13 @@
 load("@prelude//paths.bzl", "paths")
 
+ASMJIT_FLAGS=[
+    "-DASMJIT_EMBED=1",
+    "-DASMJIT_NO_BUILDER=1",
+    "-DASMJIT_NO_DEPRECATED=1",
+    "-DASMJIT_STATIC=1",
+    "-DASMJIT_NO_FOREIGN=1",
+]
+
 def flatten_includes(headers: list[str]) -> dict[str, str]:
     """
     Ignore the path of the header files and make them available by name.
