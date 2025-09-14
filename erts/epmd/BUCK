@@ -1,4 +1,3 @@
-load("@otp//buck2:defs.bzl", "CFLAGS")
 load("@otp//buck2/tests:defs.bzl", "otp_tests")
 
 EPMD_PORT_NO=4369
@@ -10,7 +9,7 @@ cxx_binary(
     deps = [
         "otp//erts:common",
     ],
-    compiler_flags = CFLAGS + [
+    compiler_flags = [
         "-DEPMD_PORT_NO={}".format(EPMD_PORT_NO)
     ],
     visibility = ["PUBLIC"],

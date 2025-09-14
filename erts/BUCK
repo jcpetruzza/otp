@@ -1,4 +1,3 @@
-load("@otp//buck2:defs.bzl", "CFLAGS")
 load("@otp//buck2/autotools:defs.bzl", "configure")
 
 configure(
@@ -27,7 +26,6 @@ cxx_library(
             for h in glob(["include/internal/**/*.h"])
         ]),
     header_namespace = "",
-    compiler_flags = CFLAGS,
     visibility = ["PUBLIC"],
     link_style = "static",
 )
