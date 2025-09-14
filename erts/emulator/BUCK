@@ -163,6 +163,7 @@ cxx_library(
             glob([
                 "sys/common/*.h",
                 "sys/unix/*.h",
+                "beam/jit/beam_asm.h",
             ]),
         ),
         strip_include_prefix(
@@ -367,5 +368,40 @@ cxx_library(
         ":headers",
         "otp//erts/emulator/zstd:lib",
     ],
+    link_style = "static",
+)
+
+cxx_library(
+    name = "beam-lib",
+    srcs = glob([
+        "beam/*.c",
+        "drivers/common/*.c",
+    ]) + [
+        ":tables[erl_atom_table.c]",
+        ":tables[erl_bif_table.c]",
+        ":tables[erl_dirty_bif_wrap.c]",
+        ":tables[erl_guard_bifs.c]",
+        ":driver_tab.c",
+        ":preload.c",
+    ],
+    headers = [
+        ":erl_compile_flags.h",
+    ],
+    header_namespace = "",
+    deps = [":headers"],
+    exported_deps = [
+        ":nifs",
+        ":sys",
+        "otp//erts:common",
+        "otp//erts/emulator/openssl:lib",
+        "otp//erts/emulator/pcre:lib",
+        "otp//erts/emulator/ryu:lib",
+        "otp//erts/emulator/zlib:lib",
+        "otp//lib/asn1:nif",
+        "otp//lib/crypto:nif",
+    ] + select({
+        "otp//buck2/config/emu_flavor:emu": [":emu"],
+        "otp//buck2/config/emu_flavor:jit": [":jit"],
+    }),
     link_style = "static",
 )
