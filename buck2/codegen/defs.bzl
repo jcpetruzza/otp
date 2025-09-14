@@ -283,3 +283,44 @@ yielding_c_fun = rule(
         ),
     },
 )
+
+def _build_flags_impl(ctx: AnalysisContext):
+    script = ctx.attrs._script[RunInfo]
+    out = ctx.actions.declare_output(ctx.attrs.name)
+
+    cmd = cmd_args([script, "-o", out.as_output()])
+    for k, v in ctx.attrs.srcs.items():
+        if isinstance(v, str):
+            cmd.add("-v", k, v)
+        elif isinstance(v, list):
+            cmd.add("-v", k, " ".join(v))
+        elif isinstance(v, Artifact):
+            cmd.add("-f", k, v)
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(default_output=out),
+    ]
+
+build_flags = rule(
+    impl = _build_flags_impl,
+    attrs = {
+        "srcs": attrs.dict(
+            attrs.string(),
+            attrs.one_of(
+                attrs.source(),
+                attrs.string(),
+                attrs.list(attrs.string()),
+            ),
+        ),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="otp//erts/emulator/utils:make_compiler_flags",
+        ),
+    },
+)

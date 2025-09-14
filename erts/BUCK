@@ -21,6 +21,12 @@ configure(
     },
 )
 
+alias(
+    name = "config.h",
+    actual = ":config[erts/config.h]",
+    visibility = ["PUBLIC"],
+)
+
 erl_version(
     name = "erl_version.h",
     otp = ":config[make/otp.mk]",
@@ -32,7 +38,7 @@ cxx_library(
     name = "headers",
     exported_headers = (
         {
-            "config.h": ":config[erts/config.h]",
+            "config.h": ":config.h",
             "erl_int_sizes_config.h": ":config[erts/include/erl_int_sizes_config.h]",
             "ethread_header_config.h": ":config[erts/include/internal/ethread_header_config.h]",
         } |
