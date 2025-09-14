@@ -1,0 +1,16 @@
+constraint_setting(
+    name = "erlang_toolchain",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "bootstrap-0",
+    constraint_setting = ":erlang_toolchain",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "system",
+    constraint_setting = ":erlang_toolchain",
+    visibility = ["PUBLIC"],
+)

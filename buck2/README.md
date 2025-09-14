@@ -32,6 +32,11 @@ $ export PATH=$ERL_TOP/buck2/bin`
 -m valgrind
 ```
 
+* For picking different versions of the Erlang/OTP toolchain
+``
+-m bootstrap_0   # prebuilt compiler, stdlib and kernel
+```
+
 ## Other options
 
 * Dynamic-tracing

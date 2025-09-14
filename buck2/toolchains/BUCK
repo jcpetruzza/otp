@@ -51,6 +51,9 @@ zip_file_toolchain(
 
 toolchain_alias(
     name = "erlang-default",
-    actual = ":erlang-system",
+    actual = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-0": ":erlang-bootstrap-0",
+        "otp//buck2/constraints/erlang_toolchain:system": ":erlang-system",
+    }),
     visibility=["PUBLIC"],
 )

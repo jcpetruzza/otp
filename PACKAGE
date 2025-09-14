@@ -19,6 +19,8 @@ native.set_cfg_constructor(
         icount = "otp//buck2/constraints/emu_type:icount",
         lcnt = "otp//buck2/constraints/emu_type:lcnt",
         valgrind = "otp//buck2/constraints/emu_type:valgrind",
+
+        bootstrap_0 = "otp//buck2/constraints/erlang_toolchain:bootstrap-0",
     ),
     extra_data = struct(),
 )
@@ -28,4 +30,7 @@ CAN_JIT = HOST_ARCH.is_x86_64 or HOST_ARCH.is_aarch64
 
 set_cfg_modifiers([
     "otp//buck2/constraints/emu_flavor:jit" if CAN_JIT else "otp//buck2/constraints/emu_flavor:emu",
+
+    # Until we are fully bootstrapped
+    "otp//buck2/constraints/erlang_toolchain:system",
 ])
