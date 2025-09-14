@@ -3,7 +3,7 @@ load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "system_python_toolchain")
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
-load("erlang.bzl", "system_erlang_toolchain")
+load("erlang.bzl", "system_erlang_toolchain", "local_erlang_toolchain")
 load("cxx.bzl", "cxx_tools_info", "c_flags", "cxx_flags", "link_flags")
 
 system_genrule_toolchain(
@@ -28,6 +28,11 @@ system_python_toolchain(
 system_python_bootstrap_toolchain(
     name = "python_bootstrap",
     visibility = ["PUBLIC"],
+)
+
+local_erlang_toolchain(
+    name = "erlang-bootstrap-0",
+    otp_release = "otp//bootstrap:bootstrap-0",
 )
 
 system_erlang_toolchain(
