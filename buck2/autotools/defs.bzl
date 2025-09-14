@@ -23,6 +23,7 @@ def target_triple():
 def _configure_impl(ctx: AnalysisContext):
     package = ctx.attrs._package_name
     srcs = ctx.attrs.srcs
+    outs = ctx.attrs.outs
     cxx_tools_info = ctx.attrs._cxx_tools_info[CxxToolsInfo]
 
     # 'configure' doesn't receive inputs as args, so to make this rule hermetic,
@@ -41,7 +42,7 @@ def _configure_impl(ctx: AnalysisContext):
     inputs = {}
     for dir, dir_srcs in srcs.items():
         for src in dir_srcs:
-            if src.extension() == ".in":
+            if src in outs or src.extension() == ".in":
                 inputs.setdefault(dir, []).append(src)
 
     if not inputs:
@@ -50,16 +51,22 @@ def _configure_impl(ctx: AnalysisContext):
     raw_outputs = {}
     for dir, dir_srcs in inputs.items():
         for src in dir_srcs:
-            wanted = paths.replace_extension(src.short_path(), "")
+            src_full_path = paths.join(dir, src.short_path())
+            wanted = outs.pop(src_full_path, None)
+            if wanted == None:
+                wanted = paths.replace_extension(src_full_path, "")
+
             # This is what the call to `configure` gives us
             raw_output = ctx.actions.declare_output(paths.join(
                 sandbox_prefix,
-                dir,
                 paths.dirname(wanted,),
                 ctx.attrs._target_triple,
-                paths.basename(wanted,)
+                paths.basename(wanted,),
             ))
-            raw_outputs[paths.join(dir, wanted)] = raw_output
+            raw_outputs[wanted] = raw_output
+
+    if outs:
+        fail("Unexpected output '{}'".format(outs.items()[0]))
 
     script = ctx.attrs.script
     patched_script = ctx.actions.declare_output(paths.join(sandbox_prefix, package, script.basename()))
@@ -154,6 +161,11 @@ _configure = rule(
             attrs.string(),
             attrs.list(attrs.source()),
         ),
+        "outs": attrs.dict(
+            attrs.string(),
+            attrs.string(),
+            default = {},
+        ),
         "_patch_configure": attrs.dep(
             providers=[RunInfo],
             default = "otp//buck2/autotools:patch-configure",
@@ -179,5 +191,6 @@ def configure(*, name, script, srcs, outs=None):
         name = name,
         script = script,
         srcs = srcs,
+        outs = outs,
         _package_name = package_name()
     )
