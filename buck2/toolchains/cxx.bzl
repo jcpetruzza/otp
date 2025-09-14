@@ -21,7 +21,6 @@ def c_flags():
     DEBUG_TYPE = select({
         "otp//buck2/config/emu_type:debug": [
             "-g",
-            "-Og",
             "-DDEBUG",
         ],
         "DEFAULT": [],
@@ -32,7 +31,6 @@ def c_flags():
             "-DERTS_GCOV",
             "-fprofile-arcs",
             "-ftest-coverage",
-            "-O0",
         ],
         "DEFAULT": [],
     })
@@ -94,12 +92,25 @@ def c_flags():
         LCNT_TYPE +
         FRMPTR_TYPE +
         ICOUNT_TYPE +
+        _opt_flags() +
         _fp_flags() +
         _jump_table_flags() +
         _maybe_unintialized_warn_flags() +
         _inline_flags()
     )
 
+def _opt_flags():
+    return select({
+        "otp//buck2/config/emu_type:debug": [
+            "-Og",
+        ],
+        "otp//buck2/config/emu_type:gcov": [
+            "-O0",
+        ],
+        "DEFAULT": [
+            "-O2",
+        ],
+    })
 
 def _fp_flags():
     return select({
