@@ -1,0 +1,73 @@
+load("@otp//buck2/autotools:defs.bzl", "configure")
+load("@otp//buck2:cxx.bzl", "flatten_includes", "strip_include_prefix")
+
+
+configure(
+    name = "config",
+    script = "configure",
+    srcs = {
+        "lib/erl_interface": [
+            "config.h.in",
+        ],
+        "make": [
+            "otp//make:autoconf/config.sub",
+        ],
+    },
+    outs = {
+        "lib/erl_interface/config.h.in": "lib/erl_interface/src/config.h",
+    }
+)
+
+cxx_library(
+    name = "lib",
+    srcs = glob([
+            "src/connect/*.c",
+            "src/decode/*.c",
+            "src/encode/*.c",
+            "src/epmd/*.c",
+            "src/global/*.c",
+            "src/misc/*.c",
+            "src/openssl/crypto/md5/*.c",
+        ]),
+    exported_headers = (
+        {"config.h":  ":config[lib/erl_interface/src/config.h]"} |
+        flatten_includes(
+            glob(
+                [
+                    "include/*.h",
+                    "src/connect/*.h",
+                    "src/decode/*.h",
+                    "src/encode/*.h",
+                    "src/epmd/*.h",
+                    "src/global/*.h",
+                    "src/misc/*.h",
+                    "src/openssl/crypto/md5/*.h",
+                ],
+                exclude = ["src/encode/eicode.h"]
+            ),
+        ) |
+        strip_include_prefix(
+            "src/openssl/include/",
+            glob(["src/openssl/include/**/*.h"]),
+        )
+    ),
+    header_namespace = "",
+    deps = [
+        "otp//erts/emulator/openssl:lib",
+    ],
+    compiler_flags = [
+        "-DEI_NO_DEPR_WARN",
+        "-DERLANG_OPENSSL_INTEGRATION",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
+
+cxx_binary(
+    name = "erl_call",
+    srcs = ["src/prog/erl_call.c"],
+    deps = [":lib"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+
+)
