@@ -91,6 +91,7 @@ def _configure_impl(ctx: AnalysisContext):
     )
     cmd.add("--build", ctx.attrs._target_triple)
     cmd.add("--host", ctx.attrs._target_triple)
+    cmd.add("--enable-builtin-zlib")
 
     dynamic_trace = ctx.attrs._dynamic_trace
     if dynamic_trace:
