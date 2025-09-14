@@ -1,4 +1,8 @@
-load("@prelude//erlang:erlang_toolchain.bzl", "erlang_toolchain")
+load(
+    "@prelude//erlang:erlang_toolchain.bzl",
+    "erlang_toolchain",
+    ErlangToolchainUtilsInfo = "ToolchainUtillInfo",
+)
 
 _COMMON_ERL_OPTS = [
     "+nowarn_underscore_match",
@@ -53,3 +57,28 @@ def local_erlang_toolchain(*,
         toolchain_utilities = toolchain_utilities,
         visibility = ["PUBLIC"],
     )
+
+def _erlang_toolchain_utilities_override_impl(ctx: AnalysisContext):
+    base = ctx.attrs._base[ErlangToolchainUtilsInfo]
+    override_keys = ["dependency_analyzer", "dependency_finalizer"]
+
+    utils = {k: getattr(base, k) for k in dir(base)}
+
+    for k in override_keys:
+        override = getattr(ctx.attrs, k)
+        if override != None:
+            utils[k] = override
+
+    return [
+        DefaultInfo(),
+        ErlangToolchainUtilsInfo(**utils)
+    ]
+
+erlang_toolchain_utilities_override = rule(
+    impl = _erlang_toolchain_utilities_override_impl,
+    attrs = {
+        "_base": attrs.dep(providers=[ErlangToolchainUtilsInfo], default = "@prelude//erlang/toolchain:toolchain_utilities"),
+        "dependency_analyzer": attrs.option(attrs.source(), default=None),
+        "dependency_finalizer": attrs.option(attrs.source(), default=None),
+    },
+)

@@ -2,6 +2,7 @@ load(
     "defs.bzl",
     "system_erlang_toolchain",
     "local_erlang_toolchain",
+    "erlang_toolchain_utilities_override",
 )
 
 local_erlang_toolchain(
@@ -12,4 +13,9 @@ local_erlang_toolchain(
 
 system_erlang_toolchain(
     name = "system",
+)
+
+erlang_toolchain_utilities_override(
+    name = "erlang-bootstrap-utils",
+    dependency_analyzer = "bootstrap_dependency_analyzer.erl",
 )
