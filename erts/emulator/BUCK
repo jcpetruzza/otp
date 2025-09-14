@@ -352,3 +352,16 @@ build_flags(
     },
 )
 
+cxx_library(
+    name = "nifs",
+    srcs = glob(["nifs/common/*.c", "nifs/unix/*.c"]),
+    headers = flatten_includes(
+        glob(["nifs/common/*.h", "nifs/unix/*.h"]),
+    ),
+    header_namespace = "",
+    deps = [
+        ":headers",
+        "otp//erts/emulator/zstd:lib",
+    ],
+    link_style = "static",
+)
