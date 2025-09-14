@@ -22,6 +22,11 @@ load(
     "link_flags",
 )
 
+_BEAM_LINKER_FLAGS = [
+    "-ltinfo",
+     "-lssl",
+     "-lcrypto",
+]
 
 alloc_types(
     name = "alloc_types",
@@ -353,7 +358,7 @@ build_flags(
     srcs = {
         "CONFIG_H": "otp//erts:config.h",
         "CFLAGS": c_flags(),
-        "LDFLAGS": link_flags(),
+        "LDFLAGS": link_flags() + _BEAM_LINKER_FLAGS,
     },
 )
 
@@ -404,4 +409,16 @@ cxx_library(
         "otp//buck2/config/emu_flavor:jit": [":jit"],
     }),
     link_style = "static",
+)
+
+cxx_binary(
+    name = "beam",
+    srcs = ["sys/unix/erl_main.c"],
+    deps = [
+        ":headers",
+        ":beam-lib",
+    ],
+    linker_flags = _BEAM_LINKER_FLAGS,
+    link_style = "static",
+    visibility = ["PUBLIC"],
 )
