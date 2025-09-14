@@ -13,6 +13,37 @@ def c_flags():
     COMMON = [
         "-DHAVE_CONFIG_H",
         "-D_GNU_SOURCE",
+
+        "-DUSE_THREADS",
+        "-D_THREAD_SAFE",
+        "-D_REENTRANT",
+        "-DPOSIX_THREADS",
+        "-D_POSIX_THREAD_SAFE_FUNCTIONS",
+
+        "-Werror=undef",
+        "-Werror=implicit",
+        "-Werror=return-type",
+
+        "-fno-common",
+        "-fstrict-flex-arrays=3",
+        "-fno-strict-aliasing",
+        "-fno-delete-null-pointer-checks",
+        "-fno-strict-overflow",
+        "-fexceptions",
+        "-fcf-protection=full",
+        "-fstack-protector-strong",
+        "-fstack-clash-protection",
+
+        "-U_FORTIFY_SOURCE",
+        "-D_FORTIFY_SOURCE=3",
+
+        "-g",
+
+        "-Wall",
+        "-Wstrict-prototypes",
+        "-Wpointer-arith",
+        "-Wmissing-prototypes",
+        "-Wdeclaration-after-statement",
     ]
 
     FLAVOR = select({
