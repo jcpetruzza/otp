@@ -1,0 +1,9 @@
+export_file(
+    name="autoconf/config.sub",
+    visibility=["PUBLIC"],
+)
+
+export_file(
+    name="otp.mk.in",
+    visibility=["otp//erts:config"],
+)

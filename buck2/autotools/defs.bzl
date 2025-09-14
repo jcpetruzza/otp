@@ -19,67 +19,72 @@ def target_triple():
     })
 
 def _configure_impl(ctx: AnalysisContext):
+    package = ctx.attrs._package_name
+    srcs = ctx.attrs.srcs
+
     # 'configure' doesn't receive inputs as args, so to make this rule hermetic,
     # we need to ensure that no other files exist in the working directory.
     # we use a sandbox dir named as a function of the inputs
     sandbox_prefix = sha256(
         '\n'.join(
-            sorted([a.short_path() for a in ctx.attrs.srcs]) +
             sorted([
                 "{}:{}".format(k, a.short_path())
-                for k, as_ in ctx.attrs._common_srcs.items()
+                for k, as_ in srcs.items()
                 for a in as_
             ])
         )
     )
-    package_name = ctx.attrs._package_name
 
-    if not ctx.attrs.srcs:
+    inputs = {}
+    for dir, dir_srcs in srcs.items():
+        for src in dir_srcs:
+            if src.extension() == ".in":
+                inputs.setdefault(dir, []).append(src)
+
+    if not inputs:
         fail("No .in files in srcs attr")
 
     raw_outputs = {}
-    for src in ctx.attrs.srcs:
-        wanted, ext = paths.split_extension(src.short_path())
-        if ext != ".in":
-            fail("{} is not a .in file".format(src.short_path()))
-        else:
+    for dir, dir_srcs in inputs.items():
+        for src in dir_srcs:
+            wanted = paths.replace_extension(src.short_path(), "")
             # This is what the call to `configure` gives us
             raw_output = ctx.actions.declare_output(paths.join(
                 sandbox_prefix,
-                package_name,
+                dir,
                 paths.dirname(wanted,),
                 ctx.attrs._target_triple,
                 paths.basename(wanted,)
             ))
-            raw_outputs[wanted] = raw_output
+            raw_outputs[paths.join(dir, wanted)] = raw_output
 
     script = ctx.attrs.script
-    patched_script = ctx.actions.declare_output(paths.join(sandbox_prefix, package_name, script.basename()))
+    patched_script = ctx.actions.declare_output(paths.join(sandbox_prefix, package, script.basename()))
+    relativized_input_paths = [
+        _relativize(paths.join(dir, input.short_path()), package)
+        for dir, dir_inputs in inputs.items()
+        for input in dir_inputs
+    ]
     ctx.actions.run(
         [
             ctx.attrs._patch_configure[RunInfo],
             "--input", script,
             "--output", patched_script.as_output()
-        ] + [src.short_path() for src in ctx.attrs.srcs],
+        ] + relativized_input_paths,
         category = "patch"
     )
 
     # We can't control where the configure script writes the output
     # except by running it on the directory that should have this output.
     # So prepare a copy of the environment
-    package_prefix = paths.join(sandbox_prefix, package_name)
-    srcs = [_symlink_file(ctx, src, prefix=package_prefix) for src in ctx.attrs.srcs]
-    common_srcs = [
-        _symlink_file(ctx, src, prefix=paths.join(sandbox_prefix, prefix))
-        for prefix, srcs in ctx.attrs._common_srcs.items()
+    linked_srcs = [
+        _symlink_file(ctx, src, prefix=paths.join(sandbox_prefix, dir))
+        for dir, srcs in srcs.items()
         for src in srcs
     ]
 
     cmd = cmd_args([ctx.attrs._run_configure[RunInfo], patched_script, _sandbox_dir(raw_outputs)],
-        hidden=[
-            srcs,
-            common_srcs,
-        ] + [ output.as_output() for output in raw_outputs.values()]
+        hidden=linked_srcs + [output.as_output() for output in raw_outputs.values()]
     )
     cmd.add("--build", ctx.attrs._target_triple)
     cmd.add("--host", ctx.attrs._target_triple)
@@ -116,11 +121,28 @@ def _symlink_file(ctx: AnalysisContext, src: Artifact, *, prefix: str | None = N
         dest = paths.join(prefix, dest)
     return ctx.actions.symlink_file(dest, src)
 
+def _relativize(path: str, start: str) -> str:
+    path_parts = paths.normalize(path).split("/")
+    start_parts = paths.normalize(start).split("/")
+
+    i = 0
+    limit = min(len(path_parts), len(start_parts))
+    for _ in range(0, limit):
+        if path_parts[i] != start_parts[i]:
+            break
+        i += 1
+
+    result_parts = [".."] * (len(start_parts) - i) + path_parts[i:]
+    return "/".join(result_parts)
+
 _configure = rule(
     impl = _configure_impl,
     attrs = {
         "script": attrs.source(),
-        "srcs": attrs.list(attrs.source()),
+        "srcs": attrs.dict(
+            attrs.string(),
+            attrs.list(attrs.source()),
+        ),
         "_patch_configure": attrs.dep(
             providers=[RunInfo],
             default = "otp//buck2/autotools:patch-configure",
@@ -130,14 +152,6 @@ _configure = rule(
             default = "otp//buck2/autotools:run-configure",
         ),
         "_package_name": attrs.string(),
-        "_common_srcs": attrs.dict(
-            attrs.string(),
-            attrs.list(attrs.source()),
-            default = {
-                "make/autoconf": [
-                    "otp//make/autoconf:config.sub",
-                ],
-            }),
         "_target_triple": attrs.string(default = target_triple()),
         "_dynamic_trace": attrs.option(attrs.string(), default = select({
             "otp//buck2/config/dynamic-trace:dtrace": "dtrace",

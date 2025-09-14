@@ -4,20 +4,29 @@ load("@otp//buck2/cxx.bzl", "strip_include_prefix")
 configure(
     name = "config",
     script = "configure",
-    srcs = [
-        "config.h.in",
-        "include/erl_int_sizes_config.h.in",
-        "include/internal/ethread_header_config.h.in",
-    ],
+    srcs = {
+        "": [
+            "otp//:OTP_VERSION",
+        ],
+        "erts": [
+            "config.h.in",
+            "include/erl_int_sizes_config.h.in",
+            "include/internal/ethread_header_config.h.in",
+            ],
+        "make": [
+            "otp//make:otp.mk.in",
+            "otp//make:autoconf/config.sub",
+        ],
+    },
 )
 
 cxx_library(
     name = "headers",
     exported_headers = (
         {
-            "config.h": ":config[config.h]",
-            "erl_int_sizes_config.h": ":config[include/erl_int_sizes_config.h]",
-            "ethread_header_config.h": ":config[include/internal/ethread_header_config.h]",
+            "config.h": ":config[erts/config.h]",
+            "erl_int_sizes_config.h": ":config[erts/include/erl_int_sizes_config.h]",
+            "ethread_header_config.h": ":config[erts/include/internal/ethread_header_config.h]",
         } |
         strip_include_prefix(
             "include/internal/",
