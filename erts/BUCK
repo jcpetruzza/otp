@@ -1,6 +1,32 @@
 load("@otp//buck2/autotools:defs.bzl", "configure")
 load("@otp//buck2/cxx.bzl", "strip_include_prefix")
 load("@otp//buck2/codegen:defs.bzl", "erl_version")
+load("@otp//buck2/erlang.bzl", "erts_release")
+
+erts_release(
+    name = "erts",
+    erl = "otp//erts/etc:dyn_erl",
+    beam = "otp//erts/emulator:beam",
+    bins = [
+        "otp//erts/etc:ct_run",
+        "otp//erts/etc:dialyzer",
+        "otp//erts/epmd:epmd",
+        "otp//erts/etc:erlc",
+        "otp//lib/erl_interface:erl_call",
+        "otp//erts/etc:escript",
+        "otp//erts/etc:run_erl",
+        "otp//erts/etc:to_erl",
+        "otp//erts/etc:typer",
+    ],
+    internal_bins = [
+        "otp//erts/etc:erlexec",
+        "otp//erts/etc:heart",
+        "otp//erts/etc:inet_gethost",
+        "otp//erts/emulator:erl_child_setup",
+        ":yielding_c_fun",
+    ],
+    visibility = ["PUBLIC"],
+)
 
 configure(
     name = "config",
