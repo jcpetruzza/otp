@@ -1,0 +1,17 @@
+config_setting(
+    name = "dtrace",
+    constraint_values = ["otp//buck2/constraints/dynamic-trace:dtrace"],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "lttng",
+    constraint_values = ["otp//buck2/constraints/dynamic-trace:lttng"],
+    visibility = ["PUBLIC"],
+)
+
+config_setting(
+    name = "systemtap",
+    constraint_values = ["otp//buck2/constraints/dynamic-trace:systemtap"],
+    visibility = ["PUBLIC"],
+)

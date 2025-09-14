@@ -1,0 +1,22 @@
+constraint_setting(
+    name = "dynamic-trace",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "dtrace",
+    constraint_setting = ":dynamic-trace",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "lttng",
+    constraint_setting = ":dynamic-trace",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "systemtap",
+    constraint_setting = ":dynamic-trace",
+    visibility = ["PUBLIC"],
+)

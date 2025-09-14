@@ -66,6 +66,10 @@ def _configure_impl(ctx: AnalysisContext):
     cmd.add("--build", ctx.attrs._target_triple)
     cmd.add("--host", ctx.attrs._target_triple)
 
+    dynamic_trace = ctx.attrs._dynamic_trace
+    if dynamic_trace:
+        cmd.add(cmd_args(dynamic_trace, format="--with-dynamic-trace={}"))
+
     ctx.actions.run(cmd, category = "configure")
 
     outputs = {
@@ -104,6 +108,7 @@ _configure = rule(
         "_package_name": attrs.string(),
         "_common_srcs": attrs.dict(attrs.string(), attrs.list(attrs.source())),
         "_target_triple": attrs.string(),
+        "_dynamic_trace": attrs.option(attrs.string()),
     }
 )
 
@@ -135,5 +140,11 @@ def configure(*, name, script, srcs, outs=None):
                     "config//abi:msvc": "aarch64-pc-windows-msvc",
                 }),
             }),
+        }),
+        _dynamic_trace = select({
+            "otp//buck2/config/dynamic-trace:dtrace": "dtrace",
+            "otp//buck2/config/dynamic-trace:lttng": "lttng",
+            "otp//buck2/config/dynamic-trace:systemtap": "systemtap",
+            "DEFAULT": None
         }),
     )

@@ -27,3 +27,10 @@ $ export PATH=$ERL_TOP/buck2/bin`
 -m lcnt
 -m valgrind
 ```
+
+## Other options
+
+* Dynamic-tracing
+```
+-m @otp//buck2/constraints/dynamic-trace:{dtrace,llntp,systemtap}
+```
