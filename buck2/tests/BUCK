@@ -1,0 +1,27 @@
+load(":defs.bzl", "otp_tests")
+
+erlang_application(
+    name = "test-support",
+    srcs = [
+        "srcs/ts_install_cth.erl",
+        "srcs/set_path_cth.erl",
+    ],
+    applications = [
+        "kernel",
+        "stdlib",
+        "common_test",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+otp_tests(
+    name = "tests",
+    suites = ["tests/otp_tests_SUITE.erl"],
+    resources = [":test-exec"],
+)
+
+cxx_binary(
+    name = "test-exec",
+    srcs = ["tests/test-exec.c"],
+    visibility = ["PUBLIC"],
+)
