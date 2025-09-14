@@ -4,7 +4,12 @@ load(
     "beam_opcodes",
     "tables",
 )
-load("@otp//buck2:cxx.bzl", "flatten_includes", "headers_union")
+load(
+    "@otp//buck2:cxx.bzl",
+    "flatten_includes",
+    "headers_union",
+    "strip_include_prefix",
+)
 
 alloc_types(
     name = "alloc_types",
@@ -74,10 +79,16 @@ cxx_library(
     exported_headers = headers_union(
         flatten_includes(
             glob([
-                "beam/*.h",
                 "sys/common/*.h",
                 "sys/unix/*.h",
             ]),
+        ),
+        strip_include_prefix(
+            "beam/",
+            glob([
+                "beam/*.h",
+                "beam/jit/beam_asm.h",
+            ])
         ),
         {
             "erl_alloc_types.h": ":alloc_types[erl_alloc_types.h]",
@@ -141,6 +152,28 @@ cxx_library(
     deps = [
         ":headers",
         "otp//erts:common",
+    ],
+    link_style = "static",
+)
+
+cxx_library(
+    name = "emu",
+    srcs = glob(["beam/emu/*.c"]) + [
+        ":opcodes-emu[beam_opcodes.c]",
+    ],
+    headers = {
+        "emu/load.h": "beam/emu/load.h",
+    },
+    header_namespace = "",
+    deps = [
+        ":headers",
+        ":opcodes-emu",
+    ],
+    target_compatible_with = [
+        "otp//buck2/config/emu_flavor:emu",
+    ],
+    modifiers = [
+        "otp//buck2/config/emu_flavor:emu",
     ],
     link_style = "static",
 )
