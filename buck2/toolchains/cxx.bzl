@@ -57,80 +57,45 @@ def c_flags(*, exclude_c_warns=False):
         "DEFAULT": []
     })
 
-    DEBUG_TYPE = select({
+    TYPE = select({
         "otp//buck2/config/emu_type:debug": [
-            "-g",
             "-DDEBUG",
         ],
-        "DEFAULT": [],
-    })
-
-    GCOV_TYPE = select({
         "otp//buck2/config/emu_type:gcov": [
             "-DERTS_GCOV",
             "-fprofile-arcs",
             "-ftest-coverage",
         ],
-        "DEFAULT": [],
-    })
-
-    VALGRIND_TYPE = select({
         "otp//buck2/config/emu_type:valgrind": [
             "-DVALGRIND",
         ],
-        "DEFAULT": [],
-    })
-
-    ASAN_TYPE = select({
         "otp//buck2/config/emu_type:asan": [
             "-fsanitize=address",
             "-fsanitize-recover=address",
             "-DADDRESS_SANITIZER",
         ],
-        "DEFAULT": [],
-    })
-
-    GPROF_TYPE = select({
         "otp//buck2/config/emu_type:gprof": [
             "-DGPROF",
             "-pg",
         ],
-        "DEFAULT": [],
-    })
-
-    LCNT_TYPE = select({
         "otp//buck2/config/emu_type:lcnt": [
             "-DERTS_ENABLE_LOCK_COUNT",
         ],
-        "DEFAULT": [],
-    })
-
-    FRMPTR_TYPE = select({
         "otp//buck2/config/emu_type:frmptr": [
             "-DERTS_FRMPTR",
         ],
-        "DEFAULT": [],
-    })
-
-    ICOUNT_TYPE = select({
         "otp//buck2/config/emu_type:icount": [
             "-DERTS_OPCODE_COUNTER_SUPPORT",
         ],
         "DEFAULT": [],
     })
 
+
     return (
         COMMON +
         (C_WARNS if not exclude_c_warns else []) +
         FLAVOR +
-        DEBUG_TYPE +
-        GCOV_TYPE +
-        VALGRIND_TYPE +
-        ASAN_TYPE +
-        GPROF_TYPE +
-        LCNT_TYPE +
-        FRMPTR_TYPE +
-        ICOUNT_TYPE +
+        TYPE +
         _opt_flags() +
         _fp_flags() +
         _jump_table_flags() +
@@ -153,6 +118,13 @@ def _opt_flags():
         "otp//buck2/config/emu_type:gcov": [
             "-O0",
         ],
+        "otp//buck2/config/emu_type:valgrind": [
+            "-Og",
+        ],
+        "otp//buck2/config/emu_type:asan": [
+            "-Og",
+        ],
+
         "DEFAULT": [
             "-O2",
         ],
@@ -189,30 +161,10 @@ def _inline_flags():
     })
 
 def link_flags():
-
-    DEBUG_FLAGS = select({
+    return select({
         "otp//buck2/config/emu_type:debug-win": ["-g"],
-        "DEFAULT": [],
-    })
-
-    GCOV_FLAGS = select({
         "otp//buck2/config/emu_type:gcov": ["-lgcov"],
-        "DEFAULT": []
-    })
-
-    ASAN_FLAGS = select({
         "otp//buck2/config/emu_type:asan": ["-fsanitize=address"],
-        "DEFAULT": []
-    })
-
-    GPROF_FLAGS = select({
         "otp//buck2/config/emu_type:gprof": ["-pg"],
         "DEFAULT": []
     })
-
-    return (
-        DEBUG_FLAGS +
-        GCOV_FLAGS +
-        ASAN_FLAGS +
-        GPROF_FLAGS
-    )
