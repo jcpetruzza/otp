@@ -1,0 +1,59 @@
+load("@otp//buck2/constants.bzl", "XMERL_VSN")
+load("@prelude//paths.bzl", "paths")
+
+erlang_application(
+    name = "app",
+    app_name = "xmerl",
+    app_src = "src/xmerl.app.src",
+    version = XMERL_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl", "src/*.yrl"],
+        exclude = ["src/xmerl_sax_parser_*.erl"] + [paths.replace_extension(f, ".erl") for f in glob(["src/*.yrl"])],
+    ) + [
+        ":xmerl_sax_parser_list.erl",
+        ":xmerl_sax_parser_latin1.erl",
+        ":xmerl_sax_parser_utf8.erl",
+        ":xmerl_sax_parser_utf16be.erl",
+        ":xmerl_sax_parser_utf16le.erl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "+warn_unused_vars",
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-1": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)
+
+_SAX_PARSERS = {
+    "xmerl_sax_parser_list.erl": "src/xmerl_sax_parser_list.erlsrc",
+    "xmerl_sax_parser_latin1.erl": "src/xmerl_sax_parser_latin1.erlsrc",
+    "xmerl_sax_parser_utf8.erl": "src/xmerl_sax_parser_utf8.erlsrc",
+    "xmerl_sax_parser_utf16be.erl": "src/xmerl_sax_parser_utf16be.erlsrc",
+    "xmerl_sax_parser_utf16le.erl": "src/xmerl_sax_parser_utf16le.erlsrc",
+}
+
+[
+    genrule(
+        name = erl_file,
+        out = erl_file,
+        srcs = [erlsrc_file, "src/xmerl_sax_parser_base.erlsrc"],
+        cmd = "cat $SRCS > $OUT"
+    )
+    for erl_file, erlsrc_file in _SAX_PARSERS.items()
+]
