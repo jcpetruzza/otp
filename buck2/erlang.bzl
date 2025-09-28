@@ -200,7 +200,10 @@ def _erlang_otp_release_impl(ctx: AnalysisContext):
 erlang_otp_release = rule(
     impl = _erlang_otp_release_impl,
     attrs = {
-        "erts": attrs.dep(providers=[ErtsReleaseInfo]),
+        "erts": attrs.transition_dep(
+            providers=[ErtsReleaseInfo],
+            cfg="otp//buck2/constraints:ignore-erlang-toolchain",
+        ),
         "extends": attrs.option(attrs.dep(providers=[ErlangOtpReleaseInfo]), default=None),
         "apps": attrs.list(attrs.dep()),
         "boots": attrs.list(attrs.source(), default=[]),

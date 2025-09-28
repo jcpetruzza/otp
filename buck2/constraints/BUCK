@@ -1,0 +1,6 @@
+load("defs.bzl", "transition_ignore_constraints")
+
+transition_ignore_constraints(
+    name = "ignore-erlang-toolchain",
+    constraints = ["otp//buck2/constraints/erlang_toolchain:erlang_toolchain"],
+)
