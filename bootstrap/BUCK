@@ -17,6 +17,30 @@ erlang_otp_release(
     visibility = ["PUBLIC"],
 )
 
+# bootstrap-1 extends bootstrap-0 with asn1, parsetools and sasl,
+erlang_otp_release(
+    name = "bootstrap-1",
+    erts = ":erts",
+    boots = [
+        "bin/start.boot",
+        "bin/no_dot_erlang.boot",
+    ],
+    extends = ":bootstrap-0",
+    apps = [
+        # Needed by public-key
+        "otp//lib/asn1:app",
+
+        # Needed by anything with an yrl
+        "otp//lib/parsetools:app",
+
+        # Needed to create start.boot
+        "otp//lib/sasl:app",
+    ],
+    bootstrapping = True,
+    modifiers = [ "otp//buck2/constraints/erlang_toolchain:bootstrap-0" ],
+    visibility = ["PUBLIC"],
+)
+
 erts_release(
     name = "erts",
     erl = "otp//erts/etc:dyn_erl",
