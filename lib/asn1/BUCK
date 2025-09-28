@@ -1,3 +1,52 @@
+load("@prelude//paths.bzl", "paths")
+load("@otp//buck2/constants.bzl", "ASN1_VSN")
+
+erlang_application(
+    name = "app",
+    app_name = "asn1",
+    app_src = "src/asn1.app.src",
+    version = ASN1_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl"],
+        exclude = [
+            "src/prepare_templates.erl",
+            "src/asn1rtt_*.erl",
+            "src/asn1ct_rtt.erl",
+            "src/asn1ct_eval_ext.erl",
+        ],
+    ) + [
+        ":asn1ct_rtt.erl",
+        ":asn1ct_eval_ext.erl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "-Werror",
+        "-Dvsn={}".format(repr(ASN1_VSN)),
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-0": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)
+
+###########################
+# NIFs
+###########################
+
 filegroup(
     name = "nif_files",
     srcs = glob(["c_src/*_nif.c"]),
@@ -11,4 +60,81 @@ cxx_library(
     compiler_flags = ["-DSTATIC_ERLANG_NIF"],
     link_style = "static",
     visibility = ["PUBLIC"],
+)
+
+###########################
+# Templates
+###########################
+
+_RT_TEMPLATES = {
+    "code:which(%s)" % paths.replace_extension(paths.basename(rtt), ""): rtt
+    for rtt in glob(["src/asn1rtt_*.erl"])
+}
+
+genrule(
+    name = "asn1ct_rtt.erl",
+    cmd = """
+    $(exe_target :prepare-templates-0) \
+      -noshell \
+      -noinput \
+      -eval 'prepare_templates:gen_asn1ct_rtt([{}]).'
+    # Remove absolute paths from comments
+    sed -E -e 's#^(%%* ).*/([^/]*)$#\\1 \\2#' asn1ct_rtt.erl >$OUT
+    """.format(", ".join(_RT_TEMPLATES.keys())),
+    out = "asn1ct_rtt.erl",
+)
+
+genrule(
+    name = "asn1ct_eval_ext.erl",
+    cmd = """
+    cd src
+    ../$(exe_target :prepare-templates-1) \
+      -noshell \
+      -noinput \
+      -run prepare_templates gen_asn1ct_eval asn1ct_eval_ext.funcs
+    mv asn1ct_eval_ext.erl ../$OUT
+    """,
+    out = "asn1ct_eval_ext.erl",
+    srcs = ["src/asn1ct_eval_ext.funcs"],
+)
+
+erlang_application(
+    name = "prepare-templates-0",
+
+    srcs = glob([
+        "src/prepare_templates.erl",
+        "src/asn1ct_func.erl",
+        "src/asn1rtt_*.erl",
+        "src/asn1_records.hrl",
+    ]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = ["+debug_info"],
+
+    # This is built during bootstrapping, we can't
+    # build support deps
+    shell_libs = [],
+)
+
+erlang_application(
+    name = "prepare-templates-1",
+
+    srcs = [
+        "src/prepare_templates.erl",
+        "src/asn1ct_func.erl",
+        ":asn1ct_rtt.erl",
+    ],
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    # This is built during bootstrapping, we can't
+    # build support deps
+    shell_libs = [],
 )
