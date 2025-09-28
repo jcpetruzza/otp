@@ -209,4 +209,5 @@ erlang_otp_release = rule(
         "boots": attrs.list(attrs.source(), default=[]),
         "bootstrapping": attrs.bool(default=False),
     },
+    supports_incoming_transition = True,
 )

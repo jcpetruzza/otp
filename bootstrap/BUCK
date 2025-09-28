@@ -1,3 +1,4 @@
+load("@otp//buck2/constraints:defs.bzl", "transition_force_constraints", "transition_ignore_constraints")
 load("@otp//buck2:erlang.bzl", "erlang_bootstrap_app", "erts_release", "erlang_otp_release")
 
 # bootstrap-0 uses pre-built versions of kernel, stdlib and compiler
@@ -14,6 +15,7 @@ erlang_otp_release(
         ":prebuilt_compiler",
     ],
     bootstrapping = True,
+    incoming_transition = ":no-erlang-toolchain",
     visibility = ["PUBLIC"],
 )
 
@@ -37,7 +39,7 @@ erlang_otp_release(
         "otp//lib/sasl:app",
     ],
     bootstrapping = True,
-    modifiers = [ "otp//buck2/constraints/erlang_toolchain:bootstrap-0" ],
+    incoming_transition = ":use-bootstrap-0",
     visibility = ["PUBLIC"],
 )
 
@@ -78,4 +80,14 @@ erlang_bootstrap_app(
     beams = glob(["lib/compiler/ebin/*.beam"]),
     include = glob(["lib/compiler/include/*.hrl"]),
     app_file = "lib/compiler/ebin/compiler.app",
+)
+
+transition_ignore_constraints(
+    name = "no-erlang-toolchain",
+    constraints = ["otp//buck2/constraints/erlang_toolchain:erlang_toolchain"],
+)
+
+transition_force_constraints(
+    name = "use-bootstrap-0",
+    constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-0"],
 )
