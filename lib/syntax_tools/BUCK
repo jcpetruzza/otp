@@ -1,0 +1,65 @@
+load("@otp//buck2/constants.bzl", "SYNTAX_TOOLS_VSN")
+
+erlang_application(
+    name = "app",
+    app_name = "syntax_tools",
+    app_src = "src/syntax_tools.app.src",
+    version = SYNTAX_TOOLS_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl"],
+        exclude = [
+            "src/merl_tests.erl",
+            "src/merl_transform.erl",
+        ],
+    ) + [
+        # merl_transform includes merl.hrl, and buck2's dependency
+        # analyzer will choke as it will think that it is trying
+        # use merl_transform as parse_transform (it ignores epp ifdefs, etc).
+        # So we use patched versions
+        ":merl_transform.erl",
+        ":merl_no_transform.hrl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "+warn_deprecated_catch",
+        "+warn_unused_import",
+        "-Werror",
+
+        # merl_transform includes merl.hrl
+        "-DMERL_NO_TRANSFORM",
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-1": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)
+
+genrule(
+    name = "merl_no_transform.hrl",
+    cmd = """
+    sed -e 's/^-compile({parse_transform, *merl_transform}).$/% OMITTED/' $(source include/merl.hrl) >$OUT
+    """,
+    out = "merl_no_transform.hrl",
+)
+
+genrule(
+    name = "merl_transform.erl",
+    cmd = """
+    sed -e 's/^-include("merl.hrl")./-include("merl_no_transform.hrl")./' $(source src/merl_transform.erl) >$OUT
+    """,
+    out = "merl_transform.erl",
+)

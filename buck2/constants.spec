@@ -3,5 +3,6 @@
     "erts/vsn.mk": "VSN",
     "lib/asn1/vsn.mk": "ASN1_VSN",
     "lib/parsetools/vsn.mk": "PARSETOOLS_VSN",
-    "lib/sasl/vsn.mk": "SASL_VSN"
+    "lib/sasl/vsn.mk": "SASL_VSN",
+    "lib/syntax_tools/vsn.mk": "SYNTAX_TOOLS_VSN"
 }
