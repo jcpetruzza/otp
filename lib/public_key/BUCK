@@ -1,0 +1,63 @@
+load("@otp//buck2/constants.bzl", "PUBLIC_KEY_VSN")
+load("@otp//buck2/erlang.bzl", "erlang_asn1_srcs")
+load("@prelude//paths.bzl", "paths")
+
+_APP_VSN = "public_key-{}".format(PUBLIC_KEY_VSN)
+
+erlang_application(
+    name = "app",
+    app_name = "public_key",
+    app_src = "src/public_key.app.src",
+    version = PUBLIC_KEY_VSN,
+
+    srcs = glob(["src/*.erl", "src/*.hrl"],
+        exclude = ["src/PKCS-FRAME.*"] + [
+            paths.join("src", paths.replace_extension(paths.basename(f), ".*"))
+            for f in glob(["asn1/*.asn1"])
+        ],
+    ) + [
+        ":asn1",
+        ":set.asn[PKCS-FRAME.erl]",
+    ],
+
+    includes = glob(
+        ["include/*.hrl"],
+        exclude = ["include/PKCS-FRAME.hrl" ],
+        ) + [
+        ":set.asn[PKCS-FRAME.hrl]",
+    ],
+
+    applications = [
+        "asn1",
+        "crypto",
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "+{{parse_transform,sys_pre_attributes}}",
+        "+{{attribute,insert,app_vsn,{}}}".format(repr(_APP_VSN)),
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-1": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)
+
+erlang_asn1_srcs(
+    name = "set.asn",
+    srcs = glob(["asn1/*.set.asn"]),
+    erl_opts = ["-bber", "+der", "+asn1config"],
+)
+
+erlang_asn1_srcs(
+    name = "asn1",
+    srcs = glob(["asn1/*.asn1"]),
+    erl_opts = ["-bber", "+der", "+asn1config"],
+)

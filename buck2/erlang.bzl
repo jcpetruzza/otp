@@ -1,4 +1,4 @@
-load("@prelude//erlang:erlang_info.bzl", "ErlangAppInfo")
+load("@prelude//erlang:erlang_info.bzl", "ErlangAppInfo", "ErlangToolchainInfo")
 load("@prelude//paths.bzl", "paths")
 load("@otp//buck2/constants.bzl", "VSN")
 
@@ -210,4 +210,58 @@ erlang_otp_release = rule(
         "bootstrapping": attrs.bool(default=False),
     },
     supports_incoming_transition = True,
+)
+
+def _erlang_asn1_srcs_impl(ctx: AnalysisContext):
+    toolchain = ctx.attrs._toolchain[ErlangToolchainInfo]
+    erl_opts = toolchain.erl_opts + ["+noobj"] + ctx.attrs.erl_opts
+
+    def _run_erlc(src: Artifact, hrl: Artifact, erl: Artifact):
+        out_dir = cmd_args(erl.as_output(), parent = 1)
+
+        erl_cmd = cmd_args(
+            toolchain.erlc_trampoline,
+            toolchain.otp_binaries.erlc,
+            erl_opts,
+            "-o",
+            out_dir,
+            src,
+            hidden = [hrl.as_output()],
+        )
+        ctx.actions.run(erl_cmd, category = "erlc_asn1", identifier = src.basename)
+
+    outputs = {}
+
+    for src in ctx.attrs.srcs:
+        if src.basename.endswith(".asn1"):
+            module_name = src.basename[:-5]
+        elif src.basename.endswith(".set.asn"):
+            module_name = src.basename[:-8]
+        else:
+            fail("Not an .asn1 or .set.asn file: '{}'".format(src))
+
+        hrl = ctx.actions.declare_output(module_name + ".hrl")
+        erl = ctx.actions.declare_output(module_name + ".erl")
+
+        _run_erlc(src, hrl, erl)
+        outputs[hrl.basename] = hrl
+        outputs[erl.basename] = erl
+
+    return [
+        DefaultInfo(
+            default_outputs = outputs.values(),
+            sub_targets = {
+                k: [DefaultInfo(default_output = o)]
+                for k, o in outputs.items()
+            }
+        ),
+    ]
+
+erlang_asn1_srcs = rule(
+    impl = _erlang_asn1_srcs_impl,
+    attrs = {
+        "srcs": attrs.list(attrs.source()),
+        "erl_opts": attrs.list(attrs.string(), default=[]),
+        "_toolchain": attrs.toolchain_dep(default = "toolchains//:erlang-default"),
+    }
 )
