@@ -5,6 +5,7 @@ load(
     "beam_opcodes",
     "preloaded",
     "tables",
+    "yielding_c_fun",
 )
 load(
     "@otp//buck2:cxx.bzl",
@@ -81,6 +82,58 @@ preloaded(
     srcs = "otp//erts/preloaded:ebin",
 )
 
+yielding_c_fun(
+    name = "erl_db_insert_list.ycf.h",
+    src = "beam/erl_db.c",
+    args = [
+        "-yield",
+        "-static_aux_funs",
+        "-only_yielding_funs",
+        "-f", "ets_insert_2_list_check",
+        "-f", "ets_insert_new_2_list_has_member",
+        "-f", "ets_insert_2_list_from_p_heap",
+        "-f", "ets_insert_2_list_destroy_copied_dbterms",
+        "-f", "ets_insert_2_list_copy_term_list",
+        "-f", "ets_insert_new_2_dbterm_list_has_member",
+        "-f", "ets_insert_2_list_insert_db_term_list",
+        "-f", "ets_insert_2_list",
+        "-fnoauto", "ets_insert_2_list_lock_tbl",
+    ],
+)
+
+yielding_c_fun(
+    name = "erl_map.ycf.h",
+    src = "beam/erl_map.c",
+    args = [
+        "-yield",
+        "-static_aux_funs",
+        "-only_yielding_funs",
+        "-fnoauto", "maps_keys_1_helper",
+        "-fnoauto", "maps_values_1_helper",
+        "-fnoauto", "maps_from_keys_2_helper",
+        "-fnoauto", "maps_from_list_1_helper",
+        "-fnoauto", "hashmap_from_validated_list",
+        "-f", "hashmap_keys",
+        "-f", "hashmap_values",
+        "-f", "hashmap_from_unsorted_array",
+        "-f", "hashmap_from_sorted_unique_array",
+        "-f", "hashmap_from_chunked_array",
+        "-fexternal", "erts_qsort",
+    ],
+)
+
+yielding_c_fun(
+    name = "utils.ycf.h",
+    src = "beam/utils.c",
+    args = [
+        "-yield",
+        "-only_yielding_funs",
+        "-f", "erts_qsort",
+        "-f", "erts_qsort_helper",
+        "-f", "erts_qsort_partion_array",
+    ],
+)
+
 cxx_library(
     name = "headers",
     exported_deps = ["otp//erts:headers"],
@@ -103,6 +156,10 @@ cxx_library(
             "erl_atom_table.h": ":tables[erl_atom_table.h]",
             "erl_bif_table.h": ":tables[erl_bif_table.h]",
             "erl_version.h": "otp//erts:erl_version.h",
+
+            "erl_db_insert_list.ycf.h": ":erl_db_insert_list.ycf.h",
+            "erl_map.ycf.h": ":erl_map.ycf.h",
+            "utils.ycf.h": ":utils.ycf.h",
 
             "erl_md5.h": "openssl/include/erl_md5.h",
             "openssl_local/md5.h": "openssl/include/openssl_local/md5.h",

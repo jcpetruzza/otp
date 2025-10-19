@@ -65,3 +65,9 @@ cxx_library(
     exported_deps = [":headers"],
     visibility = ["PUBLIC"],
 )
+
+cxx_binary(
+    name = "yielding_c_fun",
+    srcs = glob(["lib_src/yielding_c_fun/*.c"]),
+    visibility = ["PUBLIC"],
+)

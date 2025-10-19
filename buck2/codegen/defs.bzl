@@ -256,3 +256,30 @@ def preloaded(*, name: str, srcs: str):
         env = {"LANG": "C"},
         out = name,
     )
+
+def _yielding_c_fun_impl(ctx: AnalysisContext):
+    ycf = ctx.attrs._ycf[RunInfo]
+    src = ctx.attrs.src
+    args = ctx.attrs.args
+
+    out = ctx.actions.declare_output(ctx.attrs.name)
+
+    cmd = cmd_args([ycf, args, "-output_file_name", out.as_output(), src])
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+    )
+
+    return [DefaultInfo(default_output=out)]
+
+yielding_c_fun = rule(
+    impl = _yielding_c_fun_impl,
+    attrs = {
+        "src": attrs.source(),
+        "args": attrs.list(attrs.string()),
+        "_ycf": attrs.exec_dep(
+            providers=[RunInfo],
+            default="otp//erts:yielding_c_fun",
+        ),
+    },
+)
