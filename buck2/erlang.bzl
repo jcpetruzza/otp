@@ -265,3 +265,22 @@ erlang_asn1_srcs = rule(
         "_toolchain": attrs.toolchain_dep(default = "toolchains//:erlang-default"),
     }
 )
+
+def _resources_impl(ctx: AnalysisContext):
+    outputs = []
+    for f in ctx.attrs.srcs:
+        path = f.short_path
+        if paths.starts_with(path, "priv"):
+            target = paths.relativize(path, "priv/")
+        else:
+            target = path
+        outputs.append(ctx.actions.symlink_file(target, f))
+
+    return [DefaultInfo(default_outputs = outputs)]
+
+resources = rule(
+    impl = _resources_impl,
+    attrs = {
+        "srcs": attrs.list(attrs.source()),
+    },
+)
