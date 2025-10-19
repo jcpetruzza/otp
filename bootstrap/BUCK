@@ -127,3 +127,9 @@ transition_force_constraints(
     name = "use-bootstrap-1",
     constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-1"],
 )
+
+transition_force_constraints(
+    name = "use-bootstrap-2",
+    constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-2"],
+    visibility = ["PUBLIC"],
+)
