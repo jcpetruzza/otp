@@ -43,6 +43,37 @@ erlang_otp_release(
     visibility = ["PUBLIC"],
 )
 
+# bootstrap-2 is a minimal devel toolchain, built with bootstrap-1
+erlang_otp_release(
+    name = "bootstrap-2",
+    erts = ":erts",
+    boots = [
+        "bin/start.boot",
+        "bin/no_dot_erlang.boot",
+    ],
+    extends = ":bootstrap-1",
+    apps = [
+        "otp//lib/kernel:app",
+        "otp//lib/stdlib:app",
+        "otp//lib/compiler:app",
+
+        # Needed by buck2's dependency-analyszer and diameter
+        "otp//lib/syntax_tools:app",
+
+        # Needed by ssh
+        "otp//lib/public_key:app",
+
+        # Needed for common-test
+        "otp//lib/xmerl:app",
+
+        # To run tests
+        "otp//lib/common_test:app",
+    ],
+    bootstrapping = True,
+    incoming_transition = ":use-bootstrap-1",
+    visibility = ["PUBLIC"],
+)
+
 erts_release(
     name = "erts",
     erl = "otp//erts/etc:dyn_erl",
@@ -90,4 +121,9 @@ transition_ignore_constraints(
 transition_force_constraints(
     name = "use-bootstrap-0",
     constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-0"],
+)
+
+transition_force_constraints(
+    name = "use-bootstrap-1",
+    constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-1"],
 )
