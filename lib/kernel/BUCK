@@ -1,3 +1,36 @@
+load("@otp//buck2/constants.bzl", "KERNEL_VSN")
+
+erlang_application(
+    name = "app",
+    app_name = "kernel",
+    app_src = "src/kernel.app.src",
+    version = KERNEL_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl"],
+        exclude = ["src/inet_dns_record_adts.hrl"],
+    ) + [
+        ":inet_dns_record_adts.hrl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    erl_opts = [
+        "-Werror",
+        "+warn_deprecated_catch",
+    ],
+
+    visibility = ["PUBLIC"],
+)
+
+genrule(
+    name = "inet_dns_record_adts.hrl",
+    cmd = "perl ${SRCS} > ${OUT}",
+    env = {"LANG": "C"},
+    srcs = ["src/inet_dns_record_adts.pl"],
+    out = "inet_dns_record_adts.hrl",
+)
+
 export_file(
     name = "include/inet.hrl",
     visibility = ["otp//lib/common_test:app"],
