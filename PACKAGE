@@ -22,6 +22,7 @@ native.set_cfg_constructor(
 
         bootstrap_0 = "otp//buck2/constraints/erlang_toolchain:bootstrap-0",
         bootstrap_1 = "otp//buck2/constraints/erlang_toolchain:bootstrap-1",
+        bootstrap_2 = "otp//buck2/constraints/erlang_toolchain:bootstrap-2",
     ),
     extra_data = struct(),
 )

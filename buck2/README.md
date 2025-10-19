@@ -36,6 +36,7 @@ $ export PATH=$ERL_TOP/buck2/bin`
 ``
 -m bootstrap_0   # prebuilt compiler, stdlib and kernel
 -m bootstrap_1   # bootstrap-0 + asn1, parsetools, and sasl
+-m bootstrap_2   # devel toolchain built with bootstrap-1
 ```
 
 ## Other options

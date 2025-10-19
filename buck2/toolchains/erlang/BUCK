@@ -17,6 +17,12 @@ local_erlang_toolchain(
     toolchain_utilities = "toolchains//erlang:erlang-bootstrap-utils",
 )
 
+local_erlang_toolchain(
+    name = "bootstrap-2",
+    otp_release = "otp//bootstrap:bootstrap-2",
+    toolchain_utilities = "toolchains//erlang:erlang-utils",
+)
+
 system_erlang_toolchain(
     name = "system",
     toolchain_utilities = "toolchains//erlang:erlang-utils",
