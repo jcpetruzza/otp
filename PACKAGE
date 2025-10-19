@@ -1,0 +1,31 @@
+load("@prelude//cfg/modifier:cfg_constructor.bzl", "cfg_constructor_post_constraint_analysis", "cfg_constructor_pre_constraint_analysis")
+load("@prelude//cfg/modifier:common.bzl", "MODIFIER_METADATA_KEY")
+load("@prelude//cfg/modifier:set_cfg_modifiers.bzl", "set_cfg_modifiers")
+
+
+native.set_cfg_constructor(
+    stage0 = cfg_constructor_pre_constraint_analysis,
+    stage1 = cfg_constructor_post_constraint_analysis,
+    key = MODIFIER_METADATA_KEY,
+    aliases = struct(
+        emu = "otp//buck2/constraints/emu_flavor:emu",
+        jit = "otp//buck2/constraints/emu_flavor:jit",
+
+        asan = "otp//buck2/constraints/emu_type:asan",
+        debug = "otp//buck2/constraints/emu_type:debug",
+        frmptr = "otp//buck2/constraints/emu_type:frmptr",
+        gcov = "otp//buck2/constraints/emu_type:gcov",
+        gprof = "otp//buck2/constraints/emu_type:gprof",
+        icount = "otp//buck2/constraints/emu_type:icount",
+        lcnt = "otp//buck2/constraints/emu_type:lcnt",
+        valgrind = "otp//buck2/constraints/emu_type:valgrind",
+    ),
+    extra_data = struct(),
+)
+
+HOST_ARCH = host_info().arch
+CAN_JIT = HOST_ARCH.is_x86_64 or HOST_ARCH.is_aarch64
+
+set_cfg_modifiers([
+    "otp//buck2/constraints/emu_flavor:jit" if CAN_JIT else "otp//buck2/constraints/emu_flavor:emu",
+])
