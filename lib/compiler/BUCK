@@ -1,4 +1,42 @@
+load("@otp//buck2/constants.bzl", "COMPILER_VSN")
 load("@otp//buck2/codegen:defs.bzl", "compiler_opcodes")
+load("@prelude//paths.bzl", "paths")
+
+erlang_application(
+    name = "app",
+    app_name = "compiler",
+    app_src = "src/compiler.app.src",
+    version = COMPILER_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl", "src/*.yrl"],
+        exclude = ["src/beam_opcodes.*"] + [paths.replace_extension(f, ".erl") for f in glob(["src/*.yrl"])],
+    ) + [
+        # Included with `-include()` instead of `-include_lib()`
+        "otp//lib/stdlib:include/erl_compile.hrl",
+
+        ":opcodes[beam_opcodes.hrl]",
+        ":opcodes[beam_opcodes.erl]",
+    ],
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "-Werror",
+        "+warn_deprecated_catch",
+        "+inline",
+        "+warn_unused_import",
+        "-W",
+        "+warn_missing_spec",
+
+        "-DCOMPILER_VSN={}".format(repr(COMPILER_VSN)),
+    ],
+
+    visibility = ["PUBLIC"],
+)
 
 export_file(
     name = "src/genop.tab",

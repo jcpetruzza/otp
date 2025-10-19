@@ -1,6 +1,7 @@
 export_file(
     name = "include/erl_compile.hrl",
     visibility = [
+        "otp//lib/compiler:app",
         "otp//lib/parsetools:app",
         "otp//lib/sasl:app",
     ],
@@ -10,5 +11,6 @@ export_file(
     name = "include/ms_transform.hrl",
     visibility = [
         "otp//lib/parsetools:app",
+        "otp//lib/sasl:app"
     ],
 )
