@@ -32,7 +32,5 @@ CAN_JIT = HOST_ARCH.is_x86_64 or HOST_ARCH.is_aarch64
 
 set_cfg_modifiers([
     "otp//buck2/constraints/emu_flavor:jit" if CAN_JIT else "otp//buck2/constraints/emu_flavor:emu",
-
-    # Until we are fully bootstrapped
-    "otp//buck2/constraints/erlang_toolchain:system",
+    "otp//buck2/constraints/erlang_toolchain:otp-devel",
 ])

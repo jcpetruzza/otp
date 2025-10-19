@@ -23,6 +23,12 @@ local_erlang_toolchain(
     toolchain_utilities = "toolchains//erlang:erlang-utils",
 )
 
+local_erlang_toolchain(
+    name = "otp-devel",
+    otp_release = "otp//:otp-devel",
+    toolchain_utilities = "toolchains//erlang:erlang-utils",
+)
+
 system_erlang_toolchain(
     name = "system",
     toolchain_utilities = "toolchains//erlang:erlang-utils",
