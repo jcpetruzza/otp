@@ -28,6 +28,7 @@ erts/preloaded/src/deps/
 
 # buck2
 buck-out
+.buckconfig.local
 
 #
 # Generated source code files.

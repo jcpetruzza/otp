@@ -27,6 +27,3 @@
 
 [build]
   execution_platforms = prelude//platforms:default
-
-[buck2]
-  file_watcher=notify
