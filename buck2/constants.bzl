@@ -1,5 +1,6 @@
 # @generated with `buck2/bin/update-constants --replace`
 ASN1_VSN = '5.4.1'
+COMMON_TEST_VSN = '1.28'
 EPMD_PORT_NO = '4369'
 OTP_VERSION = '29.0-rc0'
 PARSETOOLS_VSN = '2.7'

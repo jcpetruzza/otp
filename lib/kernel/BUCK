@@ -1,0 +1,9 @@
+export_file(
+    name = "include/inet.hrl",
+    visibility = ["otp//lib/common_test:app"],
+)
+
+export_file(
+    name = "src/logger_internal.hrl",
+    visibility = ["otp//lib/common_test:app"],
+)

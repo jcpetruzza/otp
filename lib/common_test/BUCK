@@ -1,0 +1,60 @@
+load("@otp//buck2/constants.bzl", "COMMON_TEST_VSN")
+load("@otp//buck2/erlang.bzl", "resources")
+load("@prelude//paths.bzl", "paths")
+
+erlang_application(
+    name = "app",
+    app_name = "common_test",
+    app_src = "src/common_test.app.src",
+    version = COMMON_TEST_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl"],
+        exclude = ["src/cth_log_redirect.erl"],
+    ) + [
+        ":cth_log_redirect.erl",
+        "otp//lib/kernel:include/inet.hrl",
+        "otp//lib/kernel:src/logger_internal.hrl",
+        "otp//lib/snmp:include/snmp_types.hrl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    included_applications = ["otp//lib/xmerl:app"],
+
+    resources = [":resources"],
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = [
+        "-Werror",
+    ],
+
+    # During bootstrapping, we wan't to compile as little Erlang code
+    # as possible, in particular, we need to avoid the buck2 support modules used
+    # for the shell.
+    shell_libs = select({
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-1": [],
+        "DEFAULT": None,
+    }),
+
+    visibility = ["PUBLIC"],
+)
+
+resources(
+    name = "resources",
+    srcs = glob(["priv/*.css", "priv/*.jpg", "priv/*.js"])
+)
+
+genrule(
+    name = "cth_log_redirect.erl",
+    cmd = """
+    sed -e 's#^-include("../../kernel/src/logger_internal.hrl")\.$#-include("logger_internal.hrl").#' \
+      $(source src/cth_log_redirect.erl) \
+      > $OUT
+    """,
+    out = "cth_log_redirect.erl",
+)
