@@ -21,6 +21,7 @@ native.set_cfg_constructor(
         valgrind = "otp//buck2/constraints/emu_type:valgrind",
 
         bootstrap_0 = "otp//buck2/constraints/erlang_toolchain:bootstrap-0",
+        bootstrap_1 = "otp//buck2/constraints/erlang_toolchain:bootstrap-1",
     ),
     extra_data = struct(),
 )

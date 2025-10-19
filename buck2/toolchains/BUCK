@@ -49,6 +49,7 @@ toolchain_alias(
     name = "erlang-default",
     actual = select({
         "otp//buck2/constraints/erlang_toolchain:bootstrap-0": "toolchains//erlang:bootstrap-0",
+        "otp//buck2/constraints/erlang_toolchain:bootstrap-1": "toolchains//erlang:bootstrap-1",
         "otp//buck2/constraints/erlang_toolchain:system": "toolchains//erlang:system",
     }),
     visibility=["PUBLIC"],

@@ -35,6 +35,7 @@ $ export PATH=$ERL_TOP/buck2/bin`
 * For picking different versions of the Erlang/OTP toolchain
 ``
 -m bootstrap_0   # prebuilt compiler, stdlib and kernel
+-m bootstrap_1   # bootstrap-0 + asn1, parsetools, and sasl
 ```
 
 ## Other options
