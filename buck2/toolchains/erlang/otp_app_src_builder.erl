@@ -11,8 +11,11 @@
 Build an .app file from a given list of modules and a template
 .app.src file.
 
-This is a fork of buck2's app_src_builder.erl script that
-handles OTP's apps use of %VSN% in .app.src templates
+This is a fork of buck2's app_src_builder.erl script that:
+  1. handles OTP's apps use of %VSN% in .app.src templates
+  2. Avoids the "normalization" step that adds "kernel" and "stdlib"
+     as dependency of every application, which otherwise introduce
+     circular dependencies
 
 usage:
   otp_app_src_builder.escript app_info.json
@@ -105,7 +108,7 @@ do_parse_app_info_file(AppInfoFile) ->
                         vsn => maps:get(<<"version">>, Terms, undefined),
                         template => Template,
                         applications =>
-                            normalize_application([binary_to_atom(App) || App <- Applications]),
+                            [binary_to_atom(App) || App <- Applications],
                         included_applications =>
                             [binary_to_atom(App) || App <- IncludedApplications],
                         mod => Mod,
@@ -249,31 +252,12 @@ verify_app_props(AppName, Version, Applications, IncludedApplications, Props0) -
 verify_applications(AppName, AppDetail) ->
     case proplists:get_value(applications, AppDetail) of
         AppList when is_list(AppList) ->
-            FinalApps = normalize_application(AppList),
-            lists:keystore(applications, 1, AppDetail, {applications, FinalApps});
+            lists:keystore(applications, 1, AppDetail, {applications, AppList});
         undefined ->
             AppDetail;
         BadApplicationsValue ->
             applications_type_error(AppName, BadApplicationsValue)
     end.
-
--spec normalize_application(list(atom())) -> list(atom()).
-normalize_application(Applications) ->
-    StdLib =
-        case lists:member(stdlib, Applications) of
-            false ->
-                [stdlib];
-            true ->
-                []
-        end,
-    Kernel =
-        case lists:member(kernel, Applications) of
-            false ->
-                [kernel];
-            true ->
-                []
-        end,
-    Kernel ++ StdLib ++ Applications.
 
 -spec ensure_fields(binary(), binary(), [atom()], [atom()], proplists:proplist()) ->
     proplists:proplist().

@@ -24,7 +24,6 @@ erlang_application(
     includes = glob(["include/*.hrl"]),
 
     applications = [
-        "kernel",
         "stdlib",
     ],
 
