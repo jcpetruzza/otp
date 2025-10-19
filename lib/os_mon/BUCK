@@ -1,0 +1,50 @@
+load("@otp//buck2/constants.bzl", "OS_MON_VSN")
+
+erlang_application(
+    name = "app",
+    app_name = "os_mon",
+    app_src = "src/os_mon.app.src",
+    version = OS_MON_VSN,
+
+    srcs = glob(["src/*.erl", "src/*.hrl"]),
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+        "sasl",
+    ],
+
+    resources =  [
+        ":bin",
+    ],
+
+    erl_opts = [
+        "-Werror",
+    ],
+
+    visibility = ["PUBLIC"],
+)
+
+filegroup(
+    name = "bin",
+    srcs = [
+        ":cpu_sup",
+        ":memsup",
+    ],
+)
+
+cxx_binary(
+    name = "cpu_sup",
+    srcs = ["c_src/cpu_sup.c"],
+    link_style = "static",
+)
+
+cxx_binary(
+    name = "memsup",
+    srcs = ["c_src/memsup.c"],
+    headers = ["c_src/memsup.h"],
+    header_namespace = "",
+    link_style = "static",
+)

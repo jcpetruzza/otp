@@ -5,6 +5,7 @@
     "lib/common_test/vsn.mk": "COMMON_TEST_VSN",
     "lib/compiler/vsn.mk": "COMPILER_VSN",
     "lib/kernel/vsn.mk": "KERNEL_VSN",
+    "lib/os_mon/vsn.mk": "OS_MON_VSN",
     "lib/parsetools/vsn.mk": "PARSETOOLS_VSN",
     "lib/public_key/vsn.mk": "PUBLIC_KEY_VSN",
     "lib/sasl/vsn.mk": "SASL_VSN",
