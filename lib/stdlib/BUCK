@@ -1,3 +1,35 @@
+load("@otp//buck2/constants.bzl", "STDLIB_VSN")
+load("@prelude//paths.bzl", "paths")
+
+erlang_application(
+    name = "app",
+    app_name = "stdlib",
+    app_src = "src/stdlib.app.src",
+    version = STDLIB_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl", "src/*.yrl"],
+        exclude = ["src/unicode_util.erl"] + [paths.replace_extension(f, ".erl") for f in glob(["src/*.yrl"])],
+    ) + [
+        ":unicode_util.erl",
+        "otp//lib/kernel:include/file.hrl",
+        "otp//lib/kernel:include/logger.hrl",
+    ],
+
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+    ],
+
+    erl_opts = [
+        "-Werror",
+        "+warn_deprecated_catch",
+    ],
+
+    visibility = ["PUBLIC"],
+)
+
 export_file(
     name = "include/erl_compile.hrl",
     visibility = [
@@ -13,4 +45,17 @@ export_file(
         "otp//lib/parsetools:app",
         "otp//lib/sasl:app"
     ],
+)
+
+genrule(
+    name = "unicode_util.erl",
+    cmd = """
+    pushd uc_spec
+    # TODO: THIS SHOULD BE AN EXEC DEP
+    ../$(exe_target otp//bootstrap:bootstrap-0[escript]) ../$(source uc_spec/gen_unicode_mod.escript)
+    popd
+    mv uc_spec/unicode_util.erl ${OUT}
+    """,
+    srcs = glob(["uc_spec/*.txt"]),
+    out = "unicode_util.erl",
 )

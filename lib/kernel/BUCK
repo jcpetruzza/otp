@@ -23,6 +23,14 @@ erlang_application(
     visibility = ["PUBLIC"],
 )
 
+[
+    export_file(
+        name = hrl,
+        visibility = ["otp//lib/stdlib:app"],
+    )
+    for hrl in ["include/logger.hrl", "include/file.hrl"]
+]
+
 genrule(
     name = "inet_dns_record_adts.hrl",
     cmd = "perl ${SRCS} > ${OUT}",
