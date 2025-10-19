@@ -284,3 +284,59 @@ resources = rule(
         "srcs": attrs.list(attrs.source()),
     },
 )
+
+def _boot_script_impl(ctx: AnalysisContext):
+    src = ctx.attrs.src
+    versions = ctx.attrs.versions
+
+    toolchain = ctx.attrs._toolchain[ErlangToolchainInfo]
+    erl_opts = ctx.attrs.erl_opts
+
+    if src.extension() == ".rel":
+        rel_file = src
+    elif src.basename().endswith(".rel.src"):
+        rel_file = ctx.actions.declare_output(paths.replace_extension(src.basename(), ""))
+
+        sed_cmd = cmd_args(
+            "sed",
+            cmd_args(["s;%{}%;{};".format(k, v) for k,v in versions.items()], prepend = "-e"),
+            cmd_args(rel_file.as_output(), format = "w {}", prepend = "-e"),
+            src,
+        )
+
+        ctx.actions.run(sed_cmd, category = "sed")
+    else:
+        fail("Unsupported file type '{}'".format(src))
+
+    boot_file = ctx.actions.declare_output(ctx.attrs.name + ".boot")
+    script_file = ctx.actions.declare_output(ctx.attrs.name + ".script")
+
+    for output, identifier in [(boot_file, "boot)"), (script_file, "script")]:
+        cmd = cmd_args(
+            toolchain.erlc_trampoline,
+            toolchain.otp_binaries.erlc,
+            erl_opts,
+            "-o",
+            output.as_output(),
+            rel_file,
+        )
+        ctx.actions.run(cmd, category = "erlc", identifier = identifier)
+
+    return [
+        DefaultInfo(
+            default_output = boot_file,
+            sub_targets = {
+                "script": [DefaultInfo(default_output = script_file)],
+            }
+        )
+    ]
+
+boot_script = rule(
+    impl = _boot_script_impl,
+    attrs = {
+        "src": attrs.source(),
+        "erl_opts": attrs.list(attrs.string(), default=[]),
+        "versions": attrs.dict(attrs.string(), attrs.string(), default={}),
+        "_toolchain": attrs.toolchain_dep(default = "toolchains//:erlang-default"),
+    },
+)

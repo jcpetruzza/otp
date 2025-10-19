@@ -1,0 +1,49 @@
+load("@otp//buck2:constants.bzl", "KERNEL_VSN", "SASL_VSN", "STDLIB_VSN", "SYSTEM_VSN", "VSN")
+load("@otp//buck2:erlang.bzl", "boot_script")
+
+_VERSIONS = {
+    "ERTS_VSN": VSN,
+    "KERNEL_VSN": KERNEL_VSN,
+    "SASL_VSN": SASL_VSN,
+    "STDLIB_VSN": STDLIB_VSN,
+    "SYS_VSN": SYSTEM_VSN,
+}
+
+boot_script(
+    name = "start",
+    src = "start_clean.rel.src",
+    erl_opts = [
+        "+no_warn_sasl",
+    ],
+    versions = _VERSIONS,
+    visibility = ["PUBLIC"],
+)
+
+boot_script(
+    name = "start_clean",
+    src = "start_clean.rel.src",
+    erl_opts = [
+        "+no_warn_sasl",
+    ],
+    versions = _VERSIONS,
+    visibility = ["PUBLIC"],
+)
+
+boot_script(
+    name = "start_sasl",
+    src = "start_sasl.rel.src",
+    erl_opts = [],
+    versions = _VERSIONS,
+    visibility = ["PUBLIC"],
+)
+
+boot_script(
+    name = "no_dot_erlang",
+    src = "no_dot_erlang.rel.src",
+    erl_opts = [
+        "+no_warn_sasl",
+        "+no_dot_erlang",
+    ],
+    versions = _VERSIONS,
+    visibility = ["PUBLIC"],
+)
