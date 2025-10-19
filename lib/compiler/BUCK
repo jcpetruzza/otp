@@ -1,4 +1,11 @@
+load("@otp//buck2/codegen:defs.bzl", "compiler_opcodes")
+
 export_file(
     name = "src/genop.tab",
     visibility = ["PUBLIC"],
+)
+
+compiler_opcodes(
+    name = "opcodes",
+    table = "src/genop.tab",
 )

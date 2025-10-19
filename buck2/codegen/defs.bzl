@@ -201,6 +201,44 @@ beam_opcodes = rule(
     },
 )
 
+def _compiler_opcodes_impl(ctx: AnalysisContext):
+    table = ctx.attrs.table
+    script = ctx.attrs._script[RunInfo]
+
+    hrl_file = ctx.actions.declare_output("beam_opcodes.hrl")
+    erl_file = ctx.actions.declare_output("beam_opcodes.erl")
+
+    output_dir = cmd_args(hrl_file, parent=1, ignore_artifacts=True)
+
+    cmd = cmd_args(script, "-compiler")
+    cmd.add("-outdir", output_dir)
+    cmd.add(table)
+    cmd.add(cmd_args(hidden=[hrl_file.as_output(), erl_file.as_output()]))
+
+    ctx.actions.run(
+        cmd,
+        category = "codegen",
+        env = {"LANG": "C"},
+    )
+
+    return [
+        DefaultInfo(sub_targets = {
+            "beam_opcodes.hrl": [DefaultInfo(default_output = hrl_file)],
+            "beam_opcodes.erl": [DefaultInfo(default_output = erl_file)],
+        }),
+    ]
+
+compiler_opcodes = rule(
+    impl = _compiler_opcodes_impl,
+    attrs = {
+        "table": attrs.source(),
+        "_script": attrs.exec_dep(
+            providers=[RunInfo],
+            default="@otp//erts/emulator/utils:beam_makeops",
+        ),
+    }
+)
+
 def _erl_version_impl(ctx: AnalysisContext):
     output = ctx.actions.declare_output(ctx.attrs.name)
 
