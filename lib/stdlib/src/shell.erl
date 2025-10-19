@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(shell).
--moduledoc({file, "../doc/src/shell.md"}).
+% -moduledoc({file, "../doc/src/shell.md"}).
 
 -compile(nowarn_deprecated_catch).
 

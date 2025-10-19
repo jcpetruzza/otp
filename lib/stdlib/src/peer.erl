@@ -55,7 +55,7 @@
 -endif.
 
 -ifndef(NO_DOCS).
--moduledoc({file, "../doc/src/peer.md"}).
+% -moduledoc({file, "../doc/src/peer.md"}).
 -moduledoc(#{since => "OTP 25.0"}).
 -endif.
 

@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(ms_transform).
--moduledoc({file, "../doc/src/ms_transform.md"}).
+% -moduledoc({file, "../doc/src/ms_transform.md"}).
 
 -compile(nowarn_deprecated_catch).
 

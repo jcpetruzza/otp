@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(re).
--moduledoc({file, "../doc/src/re.md"}).
+% -moduledoc({file, "../doc/src/re.md"}).
 -export([grun/3,urun/3,ucompile/2,replace/3,replace/4,split/2,split/3]).
 
 -export_type([mp/0, compile_options/0, options/0]).

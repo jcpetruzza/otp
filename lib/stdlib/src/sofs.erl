@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(sofs).
--moduledoc({file, "../doc/src/sofs.md"}).
+% -moduledoc({file, "../doc/src/sofs.md"}).
 
 -compile(nowarn_deprecated_catch).
 

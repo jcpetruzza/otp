@@ -20,7 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(qlc).
--moduledoc({file, "../doc/src/qlc.md"}).
+% -moduledoc({file, "../doc/src/qlc.md"}).
 
 %%% Purpose: Main API module qlc. Functions for evaluation.
 %%% Other files:
