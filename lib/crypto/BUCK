@@ -1,5 +1,6 @@
 load("@otp//buck2/constants.bzl", "CRYPTO_VSN")
 load("@otp//buck2:cxx.bzl", "flatten_includes")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 erlang_application(
     name = "app",

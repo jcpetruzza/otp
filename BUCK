@@ -45,6 +45,7 @@ erlang_otp_release(
         "otp//lib/common_test:app",
         "otp//lib/tools:app",
         "otp//lib/crypto:app",
+        "otp//lib/runtime_tools:app",
     ],
     incoming_transition = "otp//bootstrap:use-bootstrap-2",
     visibility = ["PUBLIC"],

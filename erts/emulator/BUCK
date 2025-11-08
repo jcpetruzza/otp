@@ -404,6 +404,7 @@ cxx_library(
         "otp//erts/emulator/zlib:lib",
         "otp//lib/asn1:nif",
         "otp//lib/crypto:nif",
+        "otp//lib/runtime_tools:nif",
     ] + select({
         "otp//buck2/config/emu_flavor:emu": [":emu"],
         "otp//buck2/config/emu_flavor:jit": [":jit"],

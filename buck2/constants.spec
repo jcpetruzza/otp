@@ -9,6 +9,7 @@
     "lib/os_mon/vsn.mk": "OS_MON_VSN",
     "lib/parsetools/vsn.mk": "PARSETOOLS_VSN",
     "lib/public_key/vsn.mk": "PUBLIC_KEY_VSN",
+    "lib/runtime_tools/vsn.mk": "RUNTIME_TOOLS_VSN",
     "lib/sasl/vsn.mk": "SASL_VSN",
     "lib/stdlib/vsn.mk": "STDLIB_VSN",
     "lib/syntax_tools/vsn.mk": "SYNTAX_TOOLS_VSN",

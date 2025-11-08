@@ -1,0 +1,34 @@
+load("@otp//buck2/constants.bzl", "RUNTIME_TOOLS_VSN")
+load("@otp//buck2:cxx.bzl", "flatten_includes")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
+
+erlang_application(
+    name = "app",
+    app_name = "runtime_tools",
+    app_src = "src/runtime_tools.app.src",
+    version = RUNTIME_TOOLS_VSN,
+
+    srcs = glob(["src/*.erl"]),
+    includes = glob(["include/*.hrl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = COMMON_ERL_OPTS + [
+        "-Werror",
+    ],
+
+    visibility = ["PUBLIC"],
+)
+
+cxx_library(
+    name = "nif",
+    srcs = glob(["c_src/*.c"]),
+    headers = flatten_includes(glob(["c_src/*.h"])),
+    header_namespace = "",
+    deps = ["otp//erts/emulator:headers"],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+)
