@@ -1,6 +1,7 @@
 load("@otp//buck2/constants.bzl", "COMPILER_VSN")
 load("@otp//buck2/codegen:defs.bzl", "compiler_opcodes")
 load("@prelude//paths.bzl", "paths")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 erlang_application(
     name = "app",
@@ -24,7 +25,7 @@ erlang_application(
         "stdlib",
     ],
 
-    erl_opts = [
+    erl_opts = COMMON_ERL_OPTS + [
         "-Werror",
         "+warn_deprecated_catch",
         "+inline",

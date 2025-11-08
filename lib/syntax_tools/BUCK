@@ -1,4 +1,5 @@
 load("@otp//buck2/constants.bzl", "SYNTAX_TOOLS_VSN")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 erlang_application(
     name = "app",
@@ -27,7 +28,7 @@ erlang_application(
         "stdlib",
     ],
 
-    erl_opts = [
+    erl_opts = COMMON_ERL_OPTS + [
         "+warn_deprecated_catch",
         "+warn_unused_import",
         "-Werror",

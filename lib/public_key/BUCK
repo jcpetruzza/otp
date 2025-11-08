@@ -1,6 +1,7 @@
 load("@otp//buck2/constants.bzl", "PUBLIC_KEY_VSN")
 load("@otp//buck2/erlang.bzl", "erlang_asn1_srcs")
 load("@prelude//paths.bzl", "paths")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 _APP_VSN = "public_key-{}".format(PUBLIC_KEY_VSN)
 
@@ -34,7 +35,7 @@ erlang_application(
         "stdlib",
     ],
 
-    erl_opts = [
+    erl_opts = COMMON_ERL_OPTS + [
         "+{{parse_transform,sys_pre_attributes}}",
         "+{{attribute,insert,app_vsn,{}}}".format(repr(_APP_VSN)),
     ],

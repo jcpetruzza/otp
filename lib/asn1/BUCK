@@ -1,5 +1,6 @@
 load("@prelude//paths.bzl", "paths")
 load("@otp//buck2/constants.bzl", "ASN1_VSN")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 erlang_application(
     name = "app",
@@ -27,7 +28,7 @@ erlang_application(
         "stdlib",
     ],
 
-    erl_opts = [
+    erl_opts = COMMON_ERL_OPTS + [
         "-Werror",
         "-Dvsn={}".format(repr(ASN1_VSN)),
     ],
@@ -112,8 +113,6 @@ erlang_application(
         "kernel",
         "stdlib",
     ],
-
-    erl_opts = ["+debug_info"],
 
     # This is built during bootstrapping, we can't
     # build support deps

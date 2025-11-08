@@ -1,4 +1,5 @@
 load("@otp//buck2/constants.bzl", "KERNEL_VSN")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
 erlang_application(
     name = "app",
@@ -15,7 +16,7 @@ erlang_application(
 
     includes = glob(["include/*.hrl"]),
 
-    erl_opts = [
+    erl_opts = COMMON_ERL_OPTS + [
         "-Werror",
         "+warn_deprecated_catch",
     ],

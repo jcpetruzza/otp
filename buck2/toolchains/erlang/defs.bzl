@@ -4,8 +4,14 @@ load(
     ErlangToolchainUtilsInfo = "ToolchainUtillInfo",
 )
 
-_COMMON_ERL_OPTS = [
-    "+nowarn_underscore_match",
+COMMON_ERL_OPTS = [
+    "+debug_info",
+    "+warn_missing_doc_function",
+    "+warn_missing_doc_callback",
+
+    # currently leads to too many warnings being printed,
+    # specially on test-suites
+    # "+warn_missing_spec_documented",
 ]
 
 _COMMON_EMU_FLAGS = [
@@ -28,7 +34,7 @@ def system_erlang_toolchain(*, name: str, toolchain_utilities: [None, str] = Non
     erlang_toolchain(
         name = name,
         otp_binaries = ":{}-binaries".format(name),
-        erl_opts = _COMMON_ERL_OPTS,
+        erl_opts = COMMON_ERL_OPTS,
         emu_flags = _COMMON_EMU_FLAGS,
         parse_transforms_filters = {},
         parse_transforms = [],
@@ -52,7 +58,7 @@ def local_erlang_toolchain(*,
     erlang_toolchain(
         name = name,
         otp_binaries = ":{}-binaries".format(name),
-        erl_opts = _COMMON_ERL_OPTS + extra_erl_opts,
+        erl_opts = COMMON_ERL_OPTS + extra_erl_opts,
         emu_flags = _COMMON_EMU_FLAGS,
         parse_transforms_filters = {},
         parse_transforms = [],
