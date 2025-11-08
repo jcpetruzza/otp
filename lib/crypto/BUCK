@@ -1,4 +1,26 @@
+load("@otp//buck2/constants.bzl", "CRYPTO_VSN")
 load("@otp//buck2:cxx.bzl", "flatten_includes")
+
+erlang_application(
+    name = "app",
+    app_name = "crypto",
+    app_src = "src/crypto.app.src",
+    version = CRYPTO_VSN,
+
+    srcs = glob(["src/*.erl"]),
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = COMMON_ERL_OPTS + [
+        "-DCRYPTO_VSN={}".format(repr(CRYPTO_VSN)),
+        "-Werror",
+    ],
+
+    visibility = ["PUBLIC"],
+)
 
 filegroup(
     name = "nif_files",

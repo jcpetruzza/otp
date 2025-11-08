@@ -4,6 +4,7 @@
     "lib/asn1/vsn.mk": "ASN1_VSN",
     "lib/common_test/vsn.mk": "COMMON_TEST_VSN",
     "lib/compiler/vsn.mk": "COMPILER_VSN",
+    "lib/crypto/vsn.mk": "CRYPTO_VSN",
     "lib/kernel/vsn.mk": "KERNEL_VSN",
     "lib/os_mon/vsn.mk": "OS_MON_VSN",
     "lib/parsetools/vsn.mk": "PARSETOOLS_VSN",
