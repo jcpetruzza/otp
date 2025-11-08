@@ -11,6 +11,7 @@ cxx_binary(
     compiler_flags = [
         "-DEPMD_PORT_NO={}".format(EPMD_PORT_NO)
     ],
+    link_style = "static",
     visibility = ["PUBLIC"],
 )
 

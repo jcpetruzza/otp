@@ -4,7 +4,7 @@ load("@otp//buck2:erlang.bzl", "erlang_bootstrap_app", "erts_release", "erlang_o
 # bootstrap-0 uses pre-built versions of kernel, stdlib and compiler
 erlang_otp_release(
     name = "bootstrap-0",
-    erts = ":erts",
+    erts = ":erts-mini",
     boots = [
         "bin/start.boot",
         "bin/no_dot_erlang.boot",
@@ -22,7 +22,7 @@ erlang_otp_release(
 # bootstrap-1 extends bootstrap-0 with asn1, parsetools and sasl,
 erlang_otp_release(
     name = "bootstrap-1",
-    erts = ":erts",
+    erts = ":erts-mini",
     boots = [
         "bin/start.boot",
         "bin/no_dot_erlang.boot",
@@ -46,7 +46,7 @@ erlang_otp_release(
 # bootstrap-2 is a minimal devel toolchain, built with bootstrap-1
 erlang_otp_release(
     name = "bootstrap-2",
-    erts = ":erts",
+    erts = ":erts-devel",
     boots = [
         "bin/start.boot",
         "bin/no_dot_erlang.boot",
@@ -75,12 +75,28 @@ erlang_otp_release(
 )
 
 erts_release(
-    name = "erts",
+    name = "erts-mini",
     erl = "otp//erts/etc:dyn_erl",
     beam = "otp//erts/emulator:beam",
     bins = [
         "otp//erts/etc:erlc",
         "otp//erts/etc:escript",
+    ],
+    internal_bins = [
+        "otp//erts/etc:erlexec",
+        "otp//erts/etc:inet_gethost",
+        "otp//erts/emulator:erl_child_setup",
+    ],
+)
+
+erts_release(
+    name = "erts-devel",
+    erl = "otp//erts/etc:dyn_erl",
+    beam = "otp//erts/emulator:beam",
+    bins = [
+        "otp//erts/etc:erlc",
+        "otp//erts/etc:escript",
+        "otp//erts/epmd:epmd",
     ],
     internal_bins = [
         "otp//erts/etc:erlexec",
