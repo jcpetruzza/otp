@@ -7,6 +7,7 @@ def otp_tests(
     overrides: dict[str, dict[str, typing.Any]] | None = None,
     erl_opts: list[str] | None = None,
     deps: list[str] | None = None,
+    env: dict[str, str] | None = None,
     extra_ct_hooks: list[str] | None = None,
     **kwargs
 ):
@@ -31,9 +32,11 @@ def otp_tests(
         "{set_path_cth, [], -65535}",
         "{ensure_distributed_cth, [], -65534}",
     ]
+    COMMON_ENV = {"BUCK2_ERLANG_OTP_TEST": "1"}
 
     kwargs["deps"] = _append_unique(COMMON_DEPS, deps or [])
     kwargs["extra_ct_hooks"] = _append_unique(COMMON_CT_HOOKS, extra_ct_hooks or [])
+    kwargs["env"] =  _merge(env or {}, COMMON_ENV)
 
     overrides = overrides or {}
     suites_no_overrides = [suite for suite in suites if suite not in overrides]
@@ -96,7 +99,7 @@ def _merge(l, r):
 
     if isinstance(l, dict):
         if not isinstance(r, dict):
-            fail("dict expected, bog", r)
+            fail("dict expected, got", r)
 
         result = {}
         for lk, lv in l.items():
