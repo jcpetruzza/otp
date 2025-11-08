@@ -15,7 +15,11 @@
 # Uses a copy of the prelude bundled with the buck2 binary. You can alternatively delete this
 # section and vendor a copy of the prelude to the `prelude` directory of your project.
 [external_cells]
-  prelude = bundled
+  prelude = git
+
+[external_cell_prelude]
+  git_origin = https://github.com/facebook/buck2-prelude.git
+  commit_hash = 2a977c3a26f596885a25d7824c05e6ab6f70334b
 
 [parser]
   target_platform_detector_spec = target:otp//...->prelude//platforms:default

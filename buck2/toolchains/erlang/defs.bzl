@@ -20,9 +20,9 @@ _COMMON_EMU_FLAGS = [
 def system_erlang_toolchain(*, name: str, toolchain_utilities: [None, str] = None):
     native.erlang_otp_binaries(
         name = "{}-binaries".format(name),
-        erl = "local/erl",
-        erlc = "local/erlc",
-        escript = "local/escript",
+        erl = "erl",
+        erlc = "erlc",
+        escript = "escript",
         visibility=["PUBLIC"],
     )
     erlang_toolchain(
@@ -44,9 +44,10 @@ def local_erlang_toolchain(*,
 ):
     native.erlang_otp_binaries(
         name = "{}-binaries".format(name),
-        erl = "{}[erl]".format(otp_release),
-        erlc = "{}[erlc]".format(otp_release),
-        escript = "{}[escript]".format(otp_release),
+        # TODO: these need to be exec platform versions
+        erl = "$(exe_target {}[erl])".format(otp_release),
+        erlc = "$(exe_target {}[erlc])".format(otp_release),
+        escript = "$(exe_target {}[escript])".format(otp_release),
     )
     erlang_toolchain(
         name = name,

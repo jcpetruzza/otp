@@ -17,7 +17,7 @@ and stdlib (so no epp_dodger), so it can be used while bootstrapping the Erlang 
 
 -type entry() ::
     #{type := include, file := binary()}
-    | #{type := include_lib, file := binary(), app := binary()}
+    | #{type := include_lib, file := binary(), app := atom()}
     | #{type := behaviour, file := binary()}
     | #{type := parse_transform, file := binary()}.
 
@@ -41,12 +41,12 @@ do(InFile, OutSpec) ->
     file:close(Handle),
 
     Entries = lists:sort(Collected),
-    OutData = json:encode(Entries),
+    OutData = erlang:term_to_binary(Entries, [deterministic]),
     case OutSpec of
         {file, File} ->
-            ok = write_file(File, OutData);
+            ok = file:write_file(File, OutData, [raw]);
         stdout ->
-            io:format("~s~n", [OutData])
+            io:format("~p~n", [Entries])
     end.
 
 -spec collect(Handle) -> [entry()]  when
@@ -108,7 +108,7 @@ match_line(Line, [{include, Regex} | Matchers]) ->
 match_line(Line, [{include_lib, Regex} | Matchers]) ->
     case re:run(Line, Regex, [{capture, [1,2], binary}]) of
         {match, [App, IncludedFile]} ->
-            {match, #{type => include_lib, file => IncludedFile, app => App}};
+            {match, #{type => include_lib, file => IncludedFile, app => binary_to_atom(App)}};
         nomatch ->
             match_line(Line, Matchers)
     end;
@@ -127,19 +127,4 @@ match_line(Line, [{parse_transform, Regex} | Matchers]) ->
             {match, #{type => parse_transform, file => ParseTransformFile}};
         nomatch ->
             match_line(Line, Matchers)
-    end.
-
--spec write_file(file:filename(), iolist()) -> ok.
-write_file(File, Data) ->
-    case file:open(File, [write, binary, raw]) of
-        {ok, Handle} ->
-            try
-                % We use file:pwrite instead of file:write_file to work around
-                % the latter needlessly flattening iolists (as returned by
-                % json:encode/1, etc.) to a binary
-                file:pwrite(Handle, 0, Data)
-            after
-                file:close(Handle)
-            end,
-            ok
     end.
