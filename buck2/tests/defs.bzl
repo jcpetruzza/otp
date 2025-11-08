@@ -4,9 +4,10 @@ def otp_tests(
     *,
     name: str,
     suites: list[str],
+    overrides: dict[str, dict[str, typing.Any]] | None = None,
     erl_opts: list[str] | None = None,
     deps: list[str] | None = None,
-    suite_deps: dict[str, list[str]] | None = None,
+    extra_ct_hooks: list[str] | None = None,
     **kwargs
 ):
     os_env = kwargs.pop("os_env", None)
@@ -31,23 +32,25 @@ def otp_tests(
         "{ensure_distributed_cth, [], -65534}",
     ]
 
-    deps = _append_unique(COMMON_DEPS, deps or [])
-    suite_deps = suite_deps or {}
+    kwargs["deps"] = _append_unique(COMMON_DEPS, deps or [])
+    kwargs["extra_ct_hooks"] = _append_unique(COMMON_CT_HOOKS, extra_ct_hooks or [])
 
-    extra_ct_hooks = kwargs.pop("extra_ct_hooks", [])
-    extra_ct_hooks = _append_unique(COMMON_CT_HOOKS, extra_ct_hooks)
+    overrides = overrides or {}
+    suites_no_overrides = [suite for suite in suites if suite not in overrides]
 
-    suites_no_extra_deps = [suite for suite in suites if suite not in suite_deps]
-    cases = [([suite], sdeps) for suite, sdeps in suite_deps.items()]
-    cases.append((suites_no_extra_deps, []))
+    known_suites = set(suites)
 
-    for case, case_deps in cases:
+    cases = [(suites_no_overrides, kwargs)]
+    for suite, override in overrides.items():
+        if suite not in known_suites:
+            fail("Overriding unknown suite:", suite)
+        cases.append(([suite], _merge(kwargs, override)))
+
+    for case_suites, case_kwargs in cases:
         native.erlang_tests(
-            suites = case,
-            deps = deps + case_deps,
-            extra_ct_hooks = extra_ct_hooks,
+            suites = case_suites,
             os_env = os_env,
-            **kwargs
+            **case_kwargs
         )
 
     native.test_suite(
@@ -77,3 +80,30 @@ def _unique(l: list[str]) -> list[str]:
             result.append(x)
             seen.add(x)
     return result
+
+def _merge(l, r):
+    if l == None:
+        return r
+
+    if r == None:
+        return l
+
+    if isinstance(l, list):
+        if not isinstance(r, list):
+            fail("list expected, got", r)
+
+        return _append_unique(l, r)
+
+    if isinstance(l, dict):
+        if not isinstance(r, dict):
+            fail("dict expected, bog", r)
+
+        result = {}
+        for lk, lv in l.items():
+            result[lk] = _merge(lv, r.get(lk))
+        for rk, rv in r.items():
+            if rk not in l:
+                result[rk] = rv
+        return result
+
+    return r
