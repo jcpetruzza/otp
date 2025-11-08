@@ -9,6 +9,7 @@ def otp_tests(
     deps: list[str] | None = None,
     env: dict[str, str] | None = None,
     extra_ct_hooks: list[str] | None = None,
+    patch: str | None = None,
     **kwargs
 ):
     os_env = kwargs.pop("os_env", None)
@@ -38,6 +39,9 @@ def otp_tests(
     kwargs["extra_ct_hooks"] = _append_unique(COMMON_CT_HOOKS, extra_ct_hooks or [])
     kwargs["env"] =  _merge(env or {}, COMMON_ENV)
 
+    if patch != None:
+        kwargs["patch"] = patch
+
     overrides = overrides or {}
     suites_no_overrides = [suite for suite in suites if suite not in overrides]
 
@@ -50,6 +54,10 @@ def otp_tests(
         cases.append(([suite], _merge(kwargs, override)))
 
     for case_suites, case_kwargs in cases:
+        patch = case_kwargs.pop("patch", None)
+        if patch != None:
+            case_suites = _do_patch(case_suites, patch)
+
         native.erlang_tests(
             suites = case_suites,
             os_env = os_env,
@@ -110,3 +118,22 @@ def _merge(l, r):
         return result
 
     return r
+
+def _do_patch(suites: list[str], patch_cmd: str) -> list[str]:
+    result = []
+    for suite in suites:
+        name = paths.join("__patched__", suite)
+        if name.startswith(":"):
+            name = name[1:]
+
+        native.genrule(
+            name = name,
+            cmd = """
+            {patch_cmd} < $SRCS > $OUT
+            """.format(patch_cmd=patch_cmd.strip()),
+            srcs = [suite],
+            out = name,
+        )
+        result.append(":" + name)
+
+    return result
