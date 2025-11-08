@@ -1,7 +1,7 @@
 load(":defs.bzl", "otp_tests")
 
 erlang_application(
-    name = "test-support",
+    name = "buck2-test-support",
     srcs = [
         "srcs/ts_install_cth.erl",
         "srcs/set_path_cth.erl",

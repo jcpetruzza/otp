@@ -2,7 +2,7 @@ load("@prelude//paths.bzl", "paths")
 
 def otp_tests(*, name: str, suites: list[str], deps: list[str]  = [], **kwargs):
     COMMON_DEPS = [
-        "@otp//buck2/tests:test-support",
+        "@otp//buck2/tests:buck2-test-support",
     ]
     COMMON_CT_HOOKS = [
         "{set_path_cth, [], -65535}",
