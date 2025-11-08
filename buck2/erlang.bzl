@@ -1,3 +1,4 @@
+load("@prelude//:artifacts.bzl", "ArtifactGroupInfo")
 load("@prelude//erlang:erlang_info.bzl", "ErlangAppInfo", "ErlangToolchainInfo")
 load("@prelude//paths.bzl", "paths")
 load("@otp//buck2/constants.bzl", "VSN")
@@ -26,11 +27,13 @@ def _erts_release_impl(ctx: AnalysisContext):
     bins = ctx.attrs.bins
     internal_bins = ctx.attrs.internal_bins
     version = ctx.attrs.version
+    release_includes = ctx.attrs._release_includes[ArtifactGroupInfo].artifacts
 
     files = {"bin/beam.smp": beam}
     files.update(_indexed_by_basename([erl], prefix = "bin"))
     files.update(_indexed_by_basename(bins, prefix = "bin"))
     files.update(_indexed_by_basename(internal_bins, prefix = "bin"))
+    files.update(_indexed_by_basename(release_includes, prefix = "include"))
 
     erts_dir = ctx.actions.copied_dir("erts-{}".format(version), files)
     erts_bin_dir = erts_dir.project("bin")
@@ -52,6 +55,10 @@ erts_release = rule(
         "bins": attrs.list(attrs.source()),
         "internal_bins": attrs.list(attrs.source()),
         "version": attrs.string(default=VSN),
+        "_release_includes": attrs.dep(
+            providers=[ArtifactGroupInfo],
+            default="otp//erts/emulator:release-includes",
+        ),
     }
 )
 
@@ -168,8 +175,11 @@ def _erlang_otp_release_impl(ctx: AnalysisContext):
             fail("Unsupported dep {} of type {}".format(app, type(app)))
 
     lib_dir = ctx.actions.symlinked_dir("lib", lib_files)
+    usr_dir = ctx.actions.symlinked_dir("usr", {
+        "include": erts.output.project("include")
+    })
 
-    release = [bin_dir, lib_dir, erts_dir]
+    release = [bin_dir, lib_dir, erts_dir, usr_dir]
     otp_dir = ctx.actions.symlinked_dir("otp", _indexed_by_basename(release))
 
     def project_bin(name: str) -> Artifact:

@@ -157,6 +157,18 @@ driver_tab(
     drivers = glob(["drivers/common/*_drv.c"]),
 )
 
+filegroup(
+    name = "release-includes",
+    srcs = [
+        "beam/erl_driver.h",
+        "sys/unix/driver_int.h",
+        "beam/erl_nif.h",
+        "beam/erl_nif_api_funcs.h",
+        "beam/erl_drv_nif.h",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 cxx_library(
     name = "headers",
     exported_deps = [
