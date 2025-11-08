@@ -43,6 +43,7 @@ erlang_otp_release(
         "otp//lib/public_key:app",
         "otp//lib/xmerl:app",
         "otp//lib/common_test:app",
+        "otp//lib/tools:app",
     ],
     incoming_transition = "otp//bootstrap:use-bootstrap-2",
     visibility = ["PUBLIC"],

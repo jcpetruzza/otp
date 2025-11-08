@@ -11,5 +11,6 @@
     "lib/sasl/vsn.mk": "SASL_VSN",
     "lib/stdlib/vsn.mk": "STDLIB_VSN",
     "lib/syntax_tools/vsn.mk": "SYNTAX_TOOLS_VSN",
+    "lib/tools/vsn.mk": "TOOLS_VSN",
     "lib/xmerl/vsn.mk": "XMERL_VSN"
 }

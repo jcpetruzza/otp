@@ -1,0 +1,34 @@
+load("@otp//buck2/constants.bzl", "TOOLS_VSN")
+load("@otp//buck2/erlang.bzl", "resources")
+load("@prelude//paths.bzl", "paths")
+load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
+
+erlang_application(
+    name = "app",
+    app_name = "tools",
+    app_src = "src/tools.app.src",
+    version = TOOLS_VSN,
+
+    srcs = glob(
+        ["src/*.erl", "src/*.hrl", "src/*.yrl"],
+        exclude = [paths.replace_extension(f, ".erl") for f in glob(["src/*.yrl"])],
+    ),
+
+    resources = [":resources"],
+
+    applications = [
+        "kernel",
+        "stdlib",
+    ],
+
+    erl_opts = COMMON_ERL_OPTS + [
+        "-Werror",
+    ],
+
+    visibility = ["PUBLIC"],
+)
+
+resources(
+    name = "resources",
+    srcs = glob(["priv/*.css"]),
+)
