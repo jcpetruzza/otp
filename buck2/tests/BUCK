@@ -5,6 +5,7 @@ erlang_application(
     srcs = [
         "srcs/ts_install_cth.erl",
         "srcs/set_path_cth.erl",
+        "srcs/ensure_distributed_cth.erl",
     ],
     applications = [
         "kernel",

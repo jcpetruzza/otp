@@ -6,6 +6,7 @@ def otp_tests(*, name: str, suites: list[str], deps: list[str]  = [], **kwargs):
     ]
     COMMON_CT_HOOKS = [
         "{set_path_cth, [], -65535}",
+        "{ensure_distributed_cth, [], -65534}",
     ]
 
     extra_ct_hooks = kwargs.pop("extra_ct_hooks", [])
