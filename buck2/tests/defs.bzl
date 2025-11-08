@@ -70,6 +70,9 @@ def otp_tests(
     )
 
 def _target_name(suite_path: str) -> str:
+    if suite_path.startswith(":"):
+        suite_path = suite_path[1:]
+
     suite_filename = paths.basename(suite_path)
     suite_name, _ = paths.split_extension(suite_filename)
     return ":" + suite_name

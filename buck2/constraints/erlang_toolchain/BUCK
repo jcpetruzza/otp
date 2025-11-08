@@ -28,6 +28,12 @@ constraint_value(
 )
 
 constraint_value(
+    name = "compiler-testing",
+    constraint_setting = ":erlang_toolchain",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
     name = "system",
     constraint_setting = ":erlang_toolchain",
     visibility = ["PUBLIC"],

@@ -1,5 +1,6 @@
 load("@otp//buck2/constants.bzl", "COMPILER_VSN")
 load("@otp//buck2/codegen:defs.bzl", "compiler_opcodes")
+load("@otp//lib/compiler/test:defs.bzl", "test_variants")
 load("@prelude//paths.bzl", "paths")
 load("@toolchains//erlang:defs.bzl", "COMMON_ERL_OPTS")
 
@@ -39,12 +40,29 @@ erlang_application(
     visibility = ["PUBLIC"],
 )
 
+test_suite(
+    name = "tests",
+    tests = [
+        "otp//lib/compiler/test:" + tests
+        for tests in ["tests"] + [
+            test_variants.variant_group_name(v)
+            for v in test_variants.all
+        ]
+    ]
+)
+
 export_file(
     name = "src/genop.tab",
     visibility = ["PUBLIC"],
 )
 
+export_file(
+    name = "src/beam_types.hrl",
+    visibility = ["otp//lib/compiler/test:"],
+)
+
 compiler_opcodes(
     name = "opcodes",
     table = "src/genop.tab",
+    visibility = ["otp//lib/compiler/test:"],
 )

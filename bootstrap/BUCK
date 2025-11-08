@@ -149,3 +149,11 @@ transition_force_constraints(
     constraints = ["otp//buck2/constraints/erlang_toolchain:bootstrap-2"],
     visibility = ["PUBLIC"],
 )
+
+[
+    export_file(
+        name = f,
+        visibility = ["otp//lib/compiler/test:testing-toolchain"],
+    )
+    for f in ["bin/start.boot", "bin/no_dot_erlang.boot"]
+]

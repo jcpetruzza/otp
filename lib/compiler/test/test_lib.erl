@@ -24,6 +24,7 @@
 -include_lib("common_test/include/ct.hrl").
 -compile({no_auto_import,[binary_part/2]}).
 -export([id/1,recompile/1,recompile_core/1,parallel/0,
+         is_buck2_test/0,
          uniq/0,opt_opts/1,get_data_dir/1,
          smoke_disasm/1,
          p_run/2,
@@ -77,6 +78,12 @@ parallel() ->
 	false -> [parallel]
     end.
 
+is_buck2_test() ->
+    case os:getenv("BUCK2_ERLANG_OTP_TEST") of
+        false -> false;
+        _ -> true
+    end.
+
 uniq() ->
     U = erlang:unique_integer([positive]),
     "_" ++ integer_to_list(U).
@@ -122,21 +129,26 @@ opt_opts(Mod) ->
 
 get_data_dir(Config) ->
     Data = proplists:get_value(data_dir, Config),
-    Opts = [{return,list}],
-    Suffixes = ["_no_opt_SUITE",
-                "_no_bool_opt_SUITE",
-                "_no_copt_SUITE",
-                "_no_copt_ssa_SUITE",
-                "_post_opt_SUITE",
-                "_inline_SUITE",
-                "_no_module_opt_SUITE",
-                "_no_type_opt_SUITE",
-                "_no_ssa_opt_SUITE",
-                "_cover_SUITE"],
-    lists:foldl(fun(Suffix, Acc) ->
-                        Opts = [{return,list}],
-                        re:replace(Acc, Suffix, "_SUITE", Opts)
-                end, Data, Suffixes).
+    case is_buck2_test() of
+        true ->
+            Data;
+        false ->
+            Opts = [{return,list}],
+            Suffixes = ["_no_opt_SUITE",
+                        "_no_bool_opt_SUITE",
+                        "_no_copt_SUITE",
+                        "_no_copt_ssa_SUITE",
+                        "_post_opt_SUITE",
+                        "_inline_SUITE",
+                        "_no_module_opt_SUITE",
+                        "_no_type_opt_SUITE",
+                        "_no_ssa_opt_SUITE",
+                        "_cover_SUITE"],
+            lists:foldl(fun(Suffix, Acc) ->
+                                Opts = [{return,list}],
+                                re:replace(Acc, Suffix, "_SUITE", Opts)
+                        end, Data, Suffixes)
+    end.
 
 %% Test whether the module is cloned. We don't consider modules
 %% compiled with compatibility for an older release cloned (that

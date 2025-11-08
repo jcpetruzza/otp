@@ -29,6 +29,12 @@ local_erlang_toolchain(
     toolchain_utilities = "toolchains//erlang:erlang-utils",
 )
 
+local_erlang_toolchain(
+    name = "compiler-testing",
+    otp_release = "otp//lib/compiler/test:testing-toolchain",
+    toolchain_utilities = "toolchains//erlang:erlang-utils",
+)
+
 system_erlang_toolchain(
     name = "system",
     toolchain_utilities = "toolchains//erlang:erlang-utils",

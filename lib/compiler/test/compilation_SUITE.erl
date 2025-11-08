@@ -348,6 +348,7 @@ self_compile_1(Config, Prefix, Opts) ->
 self_compile_node(CompilerDir, OutDir, Version, Opts) ->
     ct:timetrap({minutes,15}),
     Pa = "-pa " ++ filename:dirname(code:which(?MODULE)) ++
+        " -pa " ++ filename:dirname(code:which(test_lib)) ++
 	" -pa " ++ CompilerDir,
     Files = compiler_src(),
 

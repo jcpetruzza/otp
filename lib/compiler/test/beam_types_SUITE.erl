@@ -26,7 +26,7 @@
 -include_lib("compiler/src/beam_types.hrl").
 
 -export([all/0, suite/0, groups/0,
-         init_per_suite/1, end_per_suite/1]).
+         init_per_group/2, end_per_group/2]).
 
 -export([absorption/1,
          associativity/1,
@@ -45,12 +45,12 @@ suite() ->
     [{ct_hooks,[ts_install_cth]}].
 
 all() ->
-    [{group,property_tests},
-     binary_absorption,
+    [binary_absorption,
      integer_absorption,
      integer_associativity,
      tuple_absorption,
-     tuple_set_limit].
+     tuple_set_limit,
+     {group,property_tests}].
 
 groups() ->
     [{property_tests,[parallel],
@@ -61,10 +61,10 @@ groups() ->
        identity,
        subtraction]}].
 
-init_per_suite(Config) ->
+init_per_group(property_tests, Config) ->
     ct_property_test:init_per_suite(Config).
 
-end_per_suite(Config) ->
+end_per_group(_TC, Config) ->
     Config.
 
 absorption(Config) when is_list(Config) ->

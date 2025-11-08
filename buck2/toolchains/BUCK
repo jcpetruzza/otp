@@ -52,6 +52,7 @@ toolchain_alias(
         "otp//buck2/constraints/erlang_toolchain:bootstrap-1": "toolchains//erlang:bootstrap-1",
         "otp//buck2/constraints/erlang_toolchain:bootstrap-2": "toolchains//erlang:bootstrap-2",
         "otp//buck2/constraints/erlang_toolchain:otp-devel": "toolchains//erlang:otp-devel",
+        "otp//buck2/constraints/erlang_toolchain:compiler-testing": "toolchains//erlang:compiler-testing",
         "otp//buck2/constraints/erlang_toolchain:system": "toolchains//erlang:system",
     }),
     visibility=["PUBLIC"],
