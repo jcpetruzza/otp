@@ -4,10 +4,25 @@ def otp_tests(
     *,
     name: str,
     suites: list[str],
+    erl_opts: list[str] | None = None,
     deps: list[str] | None = None,
     suite_deps: dict[str, list[str]] | None = None,
     **kwargs
 ):
+    os_env = kwargs.pop("os_env", None)
+    if erl_opts:
+        key = "ERL_COMPILER_OPTIONS"
+        if key in erl_opts:
+            fail("ERL_COMPILER_OPTIONS already set")
+        opts = []
+        for opt in erl_opts:
+            if opt.startswith("+"):
+                opt = opt[1:]
+            opts.append(opt)
+        value = "[{}]".format(", ".join(opts))
+        os_env = os_env if os_env != None else {}
+        os_env[key] = value
+
     COMMON_DEPS = [
         "@otp//buck2/tests:buck2-test-support",
     ]
@@ -31,6 +46,7 @@ def otp_tests(
             suites = case,
             deps = deps + case_deps,
             extra_ct_hooks = extra_ct_hooks,
+            os_env = os_env,
             **kwargs
         )
 
