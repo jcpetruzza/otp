@@ -92,7 +92,7 @@ tables(
 
 preloaded(
     name = "preload.c",
-    srcs = "otp//erts/preloaded:ebin",
+    srcs = "otp//erts/preloaded:static-ebin",
 )
 
 yielding_c_fun(

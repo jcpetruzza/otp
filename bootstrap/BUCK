@@ -53,6 +53,7 @@ erlang_otp_release(
     ],
     extends = ":bootstrap-1",
     apps = [
+        "otp//erts/preloaded:erts-app",
         "otp//lib/kernel:app",
         "otp//lib/stdlib:app",
         "otp//lib/compiler:app",

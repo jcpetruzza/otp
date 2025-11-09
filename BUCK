@@ -33,6 +33,7 @@ erlang_otp_release(
         "otp//erts/start_scripts:start[script]",
     ],
     apps = [
+        "otp//erts/preloaded:erts-app",
         "otp//lib/kernel:app",
         "otp//lib/stdlib:app",
         "otp//lib/compiler:app",

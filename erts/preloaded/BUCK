@@ -1,7 +1,23 @@
+load("@otp//buck2/constants.bzl", "VSN")
 load("@prelude//paths.bzl", "paths")
 
-filegroup(
-    name = "ebin",
-    srcs = {paths.basename(beam): beam for beam in glob(["ebin/*.beam"])},
+erlang_application(
+    name = "erts-app",
+    app_name = "erts",
+    app_src = "src/erts.app.src",
+    version = VSN,
+    srcs = glob(["src/*.erl", "src/*.hrl"]) + [
+        "otp//lib/kernel:include/file.hrl",
+        "otp//lib/kernel:src/file_int.hrl",
+        "otp//lib/kernel:src/inet_boot.hrl",
+        "otp//lib/kernel:src/inet_int.hrl",
+        "otp//lib/kernel:include/inet_sctp.hrl",
+    ],
     visibility = ["PUBLIC"],
+)
+
+filegroup(
+    name = "static-ebin",
+    srcs = {paths.basename(beam): beam for beam in glob(["ebin/*.beam"])},
+    visibility = ["otp//erts/emulator:"],
 )

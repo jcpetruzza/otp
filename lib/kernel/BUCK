@@ -24,20 +24,45 @@ erlang_application(
     visibility = ["PUBLIC"],
 )
 
-[
-    export_file(
-        name = hrl,
-        visibility = ["otp//lib/stdlib:app"],
-    )
-    for hrl in ["include/logger.hrl", "include/file.hrl"]
-]
-
 genrule(
     name = "inet_dns_record_adts.hrl",
     cmd = "perl ${SRCS} > ${OUT}",
     env = {"LANG": "C"},
     srcs = ["src/inet_dns_record_adts.pl"],
     out = "inet_dns_record_adts.hrl",
+)
+
+export_file(
+    name = "src/file_int.hrl",
+    visibility = ["otp//erts/preloaded:erts-app"],
+)
+
+export_file(
+    name = "include/file.hrl",
+    visibility = [
+        "otp//erts/preloaded:erts-app",
+        "otp//lib/stdlib:app",
+    ],
+)
+
+export_file(
+    name = "src/inet_boot.hrl",
+    visibility = ["otp//erts/preloaded:erts-app"],
+)
+
+export_file(
+    name = "src/inet_int.hrl",
+    visibility = ["otp//erts/preloaded:erts-app"],
+)
+
+export_file(
+    name = "include/inet_sctp.hrl",
+    visibility = ["otp//erts/preloaded:erts-app"],
+)
+
+export_file(
+    name = "include/logger.hrl",
+    visibility = ["otp//lib/stdlib:app"],
 )
 
 export_file(
