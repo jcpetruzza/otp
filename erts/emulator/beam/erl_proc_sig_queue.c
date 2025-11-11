@@ -5390,6 +5390,7 @@ activate_suspend_monitor(Process *c_p, ErtsMonitorSuspend *msp)
     erts_aint_t mstate;
 
     erts_pause_proc_timer(c_p);
+    erts_pause_bif_timers(c_p, ERTS_PROC_LOCK_MAIN);
     mstate = erts_atomic_read_bor_acqb(&msp->state,
                                        ERTS_MSUSPEND_STATE_FLG_ACTIVE);
     ASSERT(!(mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE)); (void) mstate;
@@ -5441,6 +5442,7 @@ sync_suspend_reply(Process *c_p, ErtsMessage *mp, erts_aint32_t state)
      */
     Process *rp;
     ErtsSyncSuspendRequest *ssusp;
+    int is_managed;
 
     ssusp = (ErtsSyncSuspendRequest *) (char *) (&mp->hfrag.mem[0]
                                                  + mp->hfrag.used_size);
@@ -5460,7 +5462,10 @@ sync_suspend_reply(Process *c_p, ErtsMessage *mp, erts_aint32_t state)
     mp->data.attached = ERTS_MSG_COMBINED_HFRAG;
     mp->next = NULL;
 
-    rp = erts_proc_lookup(ssusp->requester);
+    is_managed = erts_thr_progress_is_managed_thread();
+    rp = (is_managed
+          ? erts_proc_lookup(ssusp->requester)
+          : erts_proc_lookup_inc_refc(ssusp->requester));
     if (!rp)
         erts_cleanup_messages(mp);
     else {
@@ -5479,6 +5484,8 @@ sync_suspend_reply(Process *c_p, ErtsMessage *mp, erts_aint32_t state)
         }
         ERL_MESSAGE_TOKEN(mp) = am_undefined;
         erts_queue_proc_message(c_p, rp, 0, mp, ssusp->message);
+        if (!is_managed)
+            erts_proc_dec_refc(rp);
     }
 }
 
@@ -5618,6 +5625,8 @@ erts_proc_sig_handle_pending_suspend(Process *c_p)
 
         msp = next_msp;
     }
+
+    state = erts_atomic32_read_nob(&c_p->state);
 
     sync = psusp->sync;
 
@@ -6541,6 +6550,7 @@ erts_proc_sig_handle_incoming(Process *c_p, erts_aint32_t *statep,
                             if (mstate & ERTS_MSUSPEND_STATE_FLG_ACTIVE) {
                                 erts_resume(c_p, ERTS_PROC_LOCK_MAIN);
                                 erts_resume_paused_proc_timer(c_p);
+                                erts_resume_paused_bif_timers(c_p);
                             }
                             break;
                         }

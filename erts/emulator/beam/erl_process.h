@@ -1200,6 +1200,8 @@ struct process {
 #ifdef DEBUG
     Uint debug_reds_in;
 #endif
+
+    void* paused_bif_timers;
 };
 
 extern Eterm erts_init_process_id; /* pid of init process */
