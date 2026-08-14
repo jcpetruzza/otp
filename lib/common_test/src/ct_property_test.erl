@@ -205,10 +205,15 @@ init_tool(Config) ->
     end.
 
 init_tool_extensions(proper) ->
-    ProperExtDir = filename:join(code:lib_dir(common_test), proper_ext),
-    true = code:add_patha(ProperExtDir),
-    ct:log("Added ~ts to code path~n", [ProperExtDir]),
-    ok;
+    case module_exists(ct_proper_ext) of
+        true ->
+            ok;
+        false ->
+            ProperExtDir = filename:join(code:lib_dir(common_test), proper_ext),
+            true = code:add_patha(ProperExtDir),
+            ct:log("Added ~ts to code path~n", [ProperExtDir]),
+            ok
+    end;
 init_tool_extensions(_) ->
     ok.
 
