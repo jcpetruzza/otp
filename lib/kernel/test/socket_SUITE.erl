@@ -204,7 +204,8 @@ all() ->
               {ioctl,        "ESOCK_TEST_IOCTL",      include},
 	      {socket_close, "ESOCK_TEST_SOCK_CLOSE", include},
 	      {tickets,      "ESOCK_TEST_TICKETS",    include}],
-    [use_group(Group, Env, Default) || {Group, Env, Default} <- Groups].
+    [Spec || {Group, Env, Default} <- Groups,
+             Spec <- use_group(Group, Env, Default)].
 
 use_group(_Group, undefined, exclude) ->
     [];
