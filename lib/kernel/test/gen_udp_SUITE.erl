@@ -271,6 +271,7 @@ end_per_suite(Config0) ->
     Config1.
 
 init_per_group(inet_backend_default = _GroupName, Config) ->
+    ?LIB:has_support_ipv4(),
     [{socket_create_opts, []} | Config];
 init_per_group(inet_backend_inet = _GroupName, Config) ->
     case ?EXPLICIT_INET_BACKEND() of
