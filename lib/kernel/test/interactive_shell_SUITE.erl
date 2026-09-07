@@ -523,7 +523,7 @@ shell_format(Config) ->
         %% Note, erl_pp puts 7 spaces before X
         shell_test_lib:check_content(Term1, "fun\\(X\\) ->\\s*..        X\\s*.. end."),
         shell_test_lib:send_tty(Term1, "Down"),
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term1)," -x ",200]),
+        shell_test_lib:tmux(Term1, ["resize-window -t ",shell_test_lib:tty_name(Term1)," -x ",200]),
         timer:sleep(1000),
         shell_test_lib:send_tty(Term1, "shell:format_shell_func(\"emacs -batch \${file} -l \"\n"),
         shell_test_lib:send_tty(Term1, EmacsFormat),
@@ -871,9 +871,9 @@ shell_update_window_unicode_wrap(Config) ->
              shell_test_lib:check_content(Term,"> a*$"),
              shell_test_lib:send_tty(Term,[U,"aaaaa"]),
              shell_test_lib:check_content(Term,["> a* ?\n",U,"aaaaa$"]),
-             shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",Cols+1]),
+             shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",Cols+1]),
              shell_test_lib:check_content(Term,["> a*",U,"\naaaaa$"]),
-             shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",Cols]),
+             shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",Cols]),
              shell_test_lib:check_content(Term,["> a* ?\n",U,"aaaaa$"]),
              shell_test_lib:send_tty(Term,"Enter")
          end || U <- hard_unicode()]
@@ -1031,12 +1031,12 @@ shell_update_window(Config) ->
         shell_test_lib:send_tty(Term,Text),
         shell_test_lib:check_content(Term,Text),
         shell_test_lib:check_location(Term, {0, width(Text)}),
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text)+Col+1]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text)+Col+1]),
         shell_test_lib:send_tty(Term,"a"),
         shell_test_lib:check_location(Term, {0, -Col}),
         shell_test_lib:send_tty(Term,"BSpace"),
         shell_test_lib:check_location(Term, {-1, width(Text)}),
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text)+Col]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text)+Col]),
         %% When resizing, tmux does not xnfix the cursor, so it will remain
         %% at the previous locations
         shell_test_lib:check_location(Term, {-1, width(Text)}),
@@ -1050,7 +1050,7 @@ shell_update_window(Config) ->
         %% {-1, width(Text)} instead.
         shell_test_lib:check_location(Term, [{0, -Col}, {-1, width(Text)}]),
 
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text) div 2 + Col]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x ",width(Text) div 2 + Col]),
         %% Depending on what happened with the cursor above, the line will be
         %% different here.
         shell_test_lib:check_location(Term, [{0, -Col + width(Text) div 2},
@@ -1061,7 +1061,7 @@ shell_update_window(Config) ->
     end.
 shell_small_window_multiline_navigation(Config) ->
     Term0 = start_tty(Config),
-    shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term0)," -x ",30, " -y ", 6]),
+    shell_test_lib:tmux(Term0, ["resize-window -t ",shell_test_lib:tty_name(Term0)," -x ",30, " -y ", 6]),
     {Row, Col} = shell_test_lib:get_location(Term0),
     Term = Term0#tmux{orig_location = {Row, Col}},
     Text = ("xbcdefghijklmabcdefghijklm\n"++
@@ -1231,7 +1231,7 @@ shell_expand_location_below(Config) ->
     {ok,_,Bin} = compile:forms(Forms, [debug_info]),
 
     try
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
         Cols = 80,
 
         %% First check that basic completion works
@@ -1272,7 +1272,7 @@ shell_expand_location_below(Config) ->
                           {module, long_module} = code:load_binary(long_module, "long_module.beam", Bin)
                   end),
         shell_test_lib:check_content(Term, "3>"),
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -y 50"]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -y 50"]),
         timer:sleep(1000), %% Sleep to make sure window has resized
         Result = 61,
         Rows1 = 48,
@@ -1314,7 +1314,7 @@ shell_expand_location_below(Config) ->
 
         %% We resize the terminal to make everything fit and test that
         %% expand below displays everything
-        shell_test_lib:tmux(["resize-window -t ", shell_test_lib:tty_name(Term), " -y ", integer_to_list(Row+10)]),
+        shell_test_lib:tmux(Term, ["resize-window -t ", shell_test_lib:tty_name(Term), " -y ", integer_to_list(Row+10)]),
         timer:sleep(1000), %% Sleep to make sure window has resized
         shell_test_lib:send_tty(Term, "\t\t"),
         shell_test_lib:check_content(Term, "3> long_module:" ++ FunctionName ++ "\nFunctions(\n|.)*a_long_function_name99\\($"),
@@ -1358,7 +1358,7 @@ shell_expand_location_above(Config) ->
     Term = start_tty([{args,["-stdlib","shell_expand_location","above"]}|Config]),
 
     try
-        shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
+        shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
         shell_test_lib:send_tty(Term, "escript:"),
         shell_test_lib:send_tty(Term, "\t"),
         shell_test_lib:check_location(Term, {0, width("escript:")}),
@@ -1531,7 +1531,7 @@ external_editor(Config) ->
         _ ->
             Term = start_tty(Config),
             try
-                shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
+                shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
                 shell_test_lib:send_tty(Term,"os:putenv(\"EDITOR\",\"nano\").\n"),
                 shell_test_lib:send_tty(Term, "\"some text with\nnewline in it\""),
                 shell_test_lib:check_content(Term,"3> \"some text with\\s*\n.+\\s*newline in it\""),
@@ -1561,7 +1561,7 @@ external_editor_visual(Config) ->
         _ ->
             Term = start_tty(Config),
             try
-                shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
+                shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
                 shell_test_lib:send_tty(Term,"os:putenv(\"EDITOR\",\"nano\").\n"),
                 shell_test_lib:check_content(Term, "3>"),
                 shell_test_lib:send_tty(Term,"os:putenv(\"VISUAL\",\"vim -u DEFAULTS -U NONE -i NONE\").\n"),
@@ -1593,7 +1593,7 @@ external_editor_unicode(Config) ->
         _ ->
             Term = start_tty(Config),
             try
-                shell_test_lib:tmux(["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
+                shell_test_lib:tmux(Term, ["resize-window -t ",shell_test_lib:tty_name(Term)," -x 80"]),
                 shell_test_lib:send_tty(Term,"os:putenv(\"EDITOR\",\"nano\").\n"),
                 shell_test_lib:send_tty(Term, hard_unicode()),
                 shell_test_lib:check_content(Term,"3> " ++ hard_unicode_match(Config)),
@@ -1636,18 +1636,19 @@ shell_standard_error_nlcr(Config) ->
 shell_suspend(Config) ->
 
     Name = peer:random_name(proplists:get_value(tc_path,Config)),
+    Socket = proplists:get_value(tmux_socket, Config),
     %% In order to suspend `erl` we need it to run in a shell that has job control
     %% so we start the peer within a tmux window instead of having it be the original
     %% process.
-    os:cmd("tmux new-window -n " ++ Name ++ " -d -- bash --norc"),
+    shell_test_lib:tmux(Socket, "new-window -n " ++ Name ++ " -d -- bash --norc"),
 
     Peer = #{ name => Name,
               post_process_args =>
-                        fun(["new-window","-n",_,"-d","--"|CmdAndArgs]) ->
+                        fun(["-L",_,"new-window","-n",_,"-d","--"|CmdAndArgs]) ->
                                 FlatCmdAndArgs =
                                       lists:join(
                                         " ",[[$',A,$'] || A <- CmdAndArgs]),
-                                ["send","-t",Name,lists:flatten(FlatCmdAndArgs),"Enter"]
+                                ["-L",Socket,"send","-t",Name,lists:flatten(FlatCmdAndArgs),"Enter"]
                         end
             },
 
@@ -1682,15 +1683,16 @@ shell_full_queue(Config) ->
     %% that program in order to block writing to stdout for a while.
 
     Name = peer:random_name(proplists:get_value(tc_path,Config)),
-    os:cmd("tmux new-window -n " ++ Name ++ " -d -- bash --norc"),
+    Socket = proplists:get_value(tmux_socket, Config),
+    shell_test_lib:tmux(Socket, "new-window -n " ++ Name ++ " -d -- bash --norc"),
 
     Peer = #{ name => Name,
               post_process_args =>
-                        fun(["new-window","-n",_,"-d","--"|CmdAndArgs]) ->
+                        fun(["-L",_,"new-window","-n",_,"-d","--"|CmdAndArgs]) ->
                                 FlatCmdAndArgs = ["unbuffer -p "] ++
                                       lists:join(
                                         " ",[[$',A,$'] || A <- CmdAndArgs]),
-                                ["send","-t",Name,lists:flatten(FlatCmdAndArgs),"Enter"]
+                                ["-L",Socket,"send","-t",Name,lists:flatten(FlatCmdAndArgs),"Enter"]
                         end
             },
 
@@ -1745,15 +1747,15 @@ shell_full_queue(Config) ->
         ok
     end,
     Name2 = peer:random_name(proplists:get_value(tc_path,Config))++"_2",
-    os:cmd("tmux new-window -n " ++ Name2 ++ " -d -- bash --norc"),
+    shell_test_lib:tmux(Socket, "new-window -n " ++ Name2 ++ " -d -- bash --norc"),
 
     Peer2 = #{ name => Name2,
               post_process_args =>
-                        fun(["new-window","-n",_,"-d","--"|CmdAndArgs]) ->
+                        fun(["-L",_,"new-window","-n",_,"-d","--"|CmdAndArgs]) ->
                                 FlatCmdAndArgs = ["unbuffer -p "] ++
                                       lists:join(
                                         " ",[[$',A,$'] || A <- CmdAndArgs]),
-                                ["send","-t",Name2,lists:flatten(FlatCmdAndArgs),"Enter"]
+                                ["-L",Socket,"send","-t",Name2,lists:flatten(FlatCmdAndArgs),"Enter"]
                         end
             },
 
@@ -1773,11 +1775,11 @@ shell_full_queue(Config) ->
         shell_test_lib:send_tty(Term1, "Enter"),
         shell_test_lib:check_content(
           fun() ->
-                  shell_test_lib:tmux(["capture-pane -p -S - -E - -t ",shell_test_lib:tty_name(Term1)])
+                  shell_test_lib:tmux(Term1, ["capture-pane -p -S - -E - -t ",shell_test_lib:tty_name(Term1)])
           end, lists:flatten([lists:duplicate(Cols,$c) ++ "\n" ||
                                  _ <- lists:seq(1,(Bytes) div Cols)]
                              ++ [lists:duplicate((Bytes) rem Cols,$c)])),
-        ct:log("~ts",[shell_test_lib:tmux(["capture-pane -p -S - -E - -t ",shell_test_lib:tty_name(Term)])]),
+        ct:log("~ts",[shell_test_lib:tmux(Term, ["capture-pane -p -S - -E - -t ",shell_test_lib:tty_name(Term)])]),
         ok
     after
         shell_test_lib:stop_tty(Term1),
