@@ -733,7 +733,8 @@ iter_max_ports_test(Config) ->
                 _ -> 10
             end,
     %% Run on a different node in order to limit the effect if this test fails.
-    {ok, Peer, Node} = ?CT_PEER(["+Q", "2048"]),
+    {ok, Peer, Node} = ?CT_PEER(#{args => ["+Q", "2048"],
+                                  env => [{"ERL_ZFLAGS", false}]}),
     L = rpc:call(Node,?MODULE,do_iter_max_ports,[Iters, Command]),
     peer:stop(Peer),
 
