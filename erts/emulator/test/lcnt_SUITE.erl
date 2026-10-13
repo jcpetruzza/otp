@@ -208,5 +208,8 @@ remove_untoggleable_locks([{'esock.gcnt', _, _, _} | T]) ->
 remove_untoggleable_locks([{'esock.protocols', _, _, _} | T]) ->
     %% Global lock used by socket NIF
     remove_untoggleable_locks(T);
+remove_untoggleable_locks([{tputs_muex, _, _, _} | T]) ->
+    %% Global lock used by prim_tty NIF
+    remove_untoggleable_locks(T);
 remove_untoggleable_locks([H | T]) ->
     [H | remove_untoggleable_locks(T)].
