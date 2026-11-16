@@ -634,7 +634,10 @@ erl_crash_dump_v(char *file, int line, const char* fmt, va_list args)
             erts_cbprintf(to, to_arg, "** crashed **\n"));
     }
     erts_cbprintf(to, to_arg, "=dirty_cpu_run_queue\n");
-    erts_print_run_queue_info(to, to_arg, ERTS_DIRTY_CPU_RUNQ);
+    for(i = 0; i < erts_no_scheduling_groups; i++) {
+        const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(i);
+        erts_print_run_queue_info(to, to_arg, ERTS_DIRTY_CPU_RUNQ(esgp));
+    }
 
     for (i = 0; i < erts_no_dirty_io_schedulers; i++) {
         ERTS_SYS_TRY_CATCH(
@@ -642,7 +645,10 @@ erl_crash_dump_v(char *file, int line, const char* fmt, va_list args)
             erts_cbprintf(to, to_arg, "** crashed **\n"));
     }
     erts_cbprintf(to, to_arg, "=dirty_io_run_queue\n");
-    erts_print_run_queue_info(to, to_arg, ERTS_DIRTY_IO_RUNQ);
+    for(i = 0; i < erts_no_scheduling_groups; i++) {
+        const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(i);
+        erts_print_run_queue_info(to, to_arg, ERTS_DIRTY_IO_RUNQ(esgp));
+    }
 #endif
 
 
