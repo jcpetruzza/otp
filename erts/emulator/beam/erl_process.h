@@ -773,6 +773,8 @@ struct ErtsSchedulingGroup_ {
     Uint first_scheduler_ix;
     Uint first_dirty_cpu_ix;
     Uint first_dirty_io_ix;
+
+    Uint no_run_queues;
 };
 
 typedef union {
