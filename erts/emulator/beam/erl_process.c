@@ -189,9 +189,16 @@ typedef struct {
 } ErtsDirtyCount;
 
 typedef struct {
+    ethr_event supervision_event;
+    erts_tid_t supervisor_tid;
+    erts_atomic_t supervisor_sleeping;
+} ErtsRunQueueSupervision;
+
+typedef struct {
     ErtsSchedSuspend schdlr_sspnd;
     ErtsRunQueuesBalanceInfo balance_info;
     ErtsMigrationPathsAlloc mpaths;
+    ErtsRunQueueSupervision runq_supervision;
 
     ErtsDirtyCount dirty_count erts_align_attribute(ERTS_CACHE_LINE_SIZE);
     erts_atomic32_t no_empty_run_queues;
@@ -387,9 +394,7 @@ static erts_atomic32_t doing_sys_schedule;
 #endif
 
 long erts_runq_supervision_interval = 0;
-static ethr_event runq_supervision_event;
-static erts_tid_t runq_supervisor_tid;
-static erts_atomic_t runq_supervisor_sleeping;
+
 
 ErtsAlignedRunQueue * ERTS_WRITE_UNLIKELY(erts_aligned_run_queues);
 Uint ERTS_WRITE_UNLIKELY(erts_no_run_queues);
@@ -3009,9 +3014,10 @@ empty_runq_aux(ErtsRunQueue *rq, Uint32 old_flags)
 	if (!erts_runq_supervision_interval)
             erts_atomic32_inc_relb(&sched_group_data->no_empty_run_queues);
 	else {
+            ErtsRunQueueSupervision *runq_supervision = &sched_group_data->runq_supervision;
             erts_atomic32_inc_mb(&sched_group_data->no_empty_run_queues);
-	    if (erts_atomic_read_nob(&runq_supervisor_sleeping))
-		ethr_event_set(&runq_supervision_event);
+            if (erts_atomic_read_nob(&runq_supervision->supervisor_sleeping))
+                ethr_event_set(&runq_supervision->supervision_event);
 	}
     }
 }
@@ -3050,9 +3056,10 @@ non_empty_runq(ErtsRunQueue *rq)
             erts_atomic32_dec_relb(&sched_group_data->no_empty_run_queues);
 	else {
 	    erts_aint32_t no;
+            ErtsRunQueueSupervision *runq_supervision = &sched_group_data->runq_supervision;
             no = erts_atomic32_dec_read_mb(&sched_group_data->no_empty_run_queues);
-	    if (no > 0 && erts_atomic_read_nob(&runq_supervisor_sleeping))
-		ethr_event_set(&runq_supervision_event);
+            if (no > 0 && erts_atomic_read_nob(&runq_supervision->supervisor_sleeping))
+                ethr_event_set(&runq_supervision->supervision_event);
 	}
     }
 }
@@ -5808,24 +5815,25 @@ no_runqs_to_supervise(ErtsSchedulingGroupData *sched_group_data)
 }
 
 static void *
-runq_supervisor(void *unused)
+runq_supervisor(void *vesgdp)
 {
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedulingGroupData *sched_group_data = (ErtsSchedulingGroupData*)vesgdp;
+    ErtsRunQueueSupervision *runq_supervision = &sched_group_data->runq_supervision;
     while (1) {
 	int ix, no_rqs;
 
 	erts_milli_sleep(erts_runq_supervision_interval);
         no_rqs = no_runqs_to_supervise(sched_group_data);
 	if (!no_rqs) {
-	    erts_atomic_set_nob(&runq_supervisor_sleeping, 1);
+            erts_atomic_set_nob(&runq_supervision->supervisor_sleeping, 1);
 	    while (1) {
-		ethr_event_reset(&runq_supervision_event);
+                ethr_event_reset(&runq_supervision->supervision_event);
                 no_rqs = no_runqs_to_supervise(sched_group_data);
 		if (no_rqs) {
-		    erts_atomic_set_nob(&runq_supervisor_sleeping, 0);
+                    erts_atomic_set_nob(&runq_supervision->supervisor_sleeping, 0);
 		    break;
 		}
-		ethr_event_wait(&runq_supervision_event);
+                ethr_event_wait(&runq_supervision->supervision_event);
 	    }
 	}
 
@@ -9029,18 +9037,22 @@ erts_start_schedulers(void)
 
     if (erts_runq_supervision_interval) {
 	opts.suggested_stack_size = 16;
-        erts_snprintf(opts.name, sizeof(name), "erts_runq_sup");
-	erts_atomic_init_nob(&runq_supervisor_sleeping, 0);
-	if (0 != ethr_event_init(&runq_supervision_event))
-	    erts_exit(ERTS_ABORT_EXIT, "Failed to create run-queue supervision event\n");
-        res = ethr_thr_create(&runq_supervisor_tid,
-                              runq_supervisor,
-                              NULL,
-                              &opts);
-	if (0 != res)
-	    erts_exit(ERTS_ABORT_EXIT, "Failed to create run-queue supervision thread, "
-                      "error = %d\n", res);
+        for(ix = 0; ix < erts_no_scheduling_groups; ix++) {
+            ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(ix);
+            ErtsRunQueueSupervision *runq_supervision = &sched_group_data->runq_supervision;
 
+            erts_snprintf(opts.name, sizeof(name), "erts_runq_sup_%d", ix + 1);
+            erts_atomic_init_nob(&runq_supervision->supervisor_sleeping, 0);
+            if (0 != ethr_event_init(&runq_supervision->supervision_event))
+                erts_exit(ERTS_ABORT_EXIT, "Failed to create run-queue supervision event\n");
+            res = ethr_thr_create(&runq_supervision->supervisor_tid,
+                                  runq_supervisor,
+                                  (void*)sched_group_data,
+                                  &opts);
+            if (0 != res)
+                erts_exit(ERTS_ABORT_EXIT, "Failed to create run-queue supervision thread, "
+                          "error = %d\n", res);
+        }
     }
 
     opts.suggested_stack_size = erts_sched_thread_suggested_stack_size;
