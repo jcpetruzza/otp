@@ -253,9 +253,8 @@ ErtsAlignedSchedulingGroupData * ERTS_WRITE_UNLIKELY(aligned_scheduling_groups_d
 #define SCHEDULING_GROUP_DATA_FOR_SCHEDULER(S)  \
   (SCHEDULING_GROUP_DATA_IX(ERTS_SCHEDULING_GROUP_FOR_SCHEDULER((S))->ix))
 
-/* For now all processes are in the default group */
 #define SCHEDULING_GROUP_DATA_FOR_PROC(P)       \
-  (SCHEDULING_GROUP_DATA_IX(0))
+  (SCHEDULING_GROUP_DATA_IX((P)->sched_group_ix))
 
 const Process erts_invalid_process = {{ERTS_INVALID_PID}};
 
@@ -6678,6 +6677,7 @@ make_proxy_proc(Process *prev_proxy, Process *proc, erts_aint32_t prio)
     }
 
     proxy->common.id = proc->common.id;
+    proxy->sched_group_ix = proc->sched_group_ix;
     ASSERT(proxy->u.real_proc == NULL);
     proxy->u.real_proc = proc;
     erts_proc_inc_refc(proc);
@@ -6871,7 +6871,12 @@ select_enqueue_run_queue(int enqueue, int enq_prio, Process *p, erts_aint32_t st
 	runq = erts_get_runq_proc(p, &bound);
 
 	if (!bound) {
-	    ErtsRunQueue *new_runq = erts_check_emigration_need(runq, enq_prio);
+            ErtsRunQueue *new_runq;
+
+            if (ERTS_UNLIKELY(runq->sched_group_ix != p->sched_group_ix))
+                new_runq = ERTS_RUNQ_SG_IX(ERTS_SCHEDULING_GROUP_FOR_PROC(p), 0);
+            else
+                new_runq = erts_check_emigration_need(runq, enq_prio);
             if (new_runq) {
                 if (erts_try_change_runq_proc(p, new_runq))
                     runq = new_runq;
@@ -8534,8 +8539,7 @@ erts_set_schedulers_online(Process *p,
     ErtsProcList *plp;
     int dirty_no, change_dirty, dirty_online;
     Eterm resume_next = NIL;
-    // TODO: FIXME: RECEIVE SCHEDULING GROUP AS PARAMETER
-    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_PROC(p);
     ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
@@ -12469,6 +12473,7 @@ typedef struct {
     Process *proc;
     erts_aint32_t state;
     ErtsRunQueue *run_queue;
+    Uint sched_group_ix;
     int bound;
 } ErtsEarlyProcInit;
 
@@ -12481,6 +12486,7 @@ static void early_init_process_struct(void *varg, Eterm data)
     erts_atomic32_init_nob(&proc->xstate, 0);
     proc->dirty_sys_tasks = NULL;
     erts_init_runq_proc(proc, arg->run_queue, arg->bound);
+    proc->sched_group_ix = arg->sched_group_ix;
     erts_atomic_init_nob(&proc->sig_inq_buffers, (erts_aint_t)NULL);
 
     erts_atomic32_init_relb(&proc->state, arg->state);
@@ -12493,7 +12499,8 @@ static void early_init_process_struct(void *varg, Eterm data)
 ** Allocate process and find out where to place next process.
 */
 static Process*
-alloc_process(ErtsRunQueue *rq, int bound, erts_aint32_t state)
+alloc_process(ErtsRunQueue *rq, Uint sched_group_ix, int bound,
+              erts_aint32_t state)
 {
     ErtsEarlyProcInit init_arg;
     Process *p;
@@ -12507,6 +12514,7 @@ alloc_process(ErtsRunQueue *rq, int bound, erts_aint32_t state)
     init_arg.proc = (Process *) p;
     init_arg.state = state;
     init_arg.run_queue = rq;
+    init_arg.sched_group_ix = sched_group_ix;
     init_arg.bound = bound;
 
     ERTS_CT_ASSERT(offsetof(Process,common) == 0);
@@ -12758,6 +12766,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 {
     int bound = 0;
     Uint flags = 0, qs_flags = 0;
+    Uint sched_group_ix = 0;
     ErtsRunQueue *rq = NULL;
     Process *p;
     Sint arity;			/* Number of arguments. */
@@ -12787,6 +12796,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     else {
         token = SEQ_TRACE_TOKEN(parent);
         erts_proc_lock(parent, ERTS_PROC_LOCKS_ALL_MINOR);
+        sched_group_ix = parent->sched_group_ix;
         group_leader = parent->group_leader;
         parent_id = parent->common.id;
         if (so->monitor_oflags & ERTS_ML_STATE_ALIAS_MASK)
@@ -12818,6 +12828,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	    int ix = so->scheduler-1;
 	    ASSERT(0 <= ix && ix < erts_no_run_queues);
 	    rq = ERTS_RUNQ_IX(ix);
+            sched_group_ix = rq->sched_group_ix;
 	    /* Unsupported feature... */
             bound = !0;
 	}
@@ -12848,8 +12859,8 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     }
     ASSERT(rq);
 
-    p = alloc_process(rq, bound, state); /* All proc locks are locked by this thread
-                                            on success */
+    p = alloc_process(rq, sched_group_ix, bound, state); /* All proc locks are locked
+                                                            by this thread on success */
     if (!p) {
 	erts_send_error_to_logger_str(group_leader, "Too many processes\n");
 	so->error_code = SYSTEM_LIMIT;
@@ -13532,6 +13543,7 @@ void erts_init_empty_process(Process *p)
     p->live_hf_end = ERTS_INVALID_HFRAG_PTR;
     p->gen_gcs = 0;
     p->max_gen_gcs = 0;
+    p->sched_group_ix = 0;
     p->min_heap_size = 0;
     p->min_vheap_size = 0;
     p->rcount = 0;

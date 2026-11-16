@@ -2082,6 +2082,8 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
        else {
            int bound = !0;
 	   new = erts_schedid2runq(sched);
+           if (new->sched_group_ix != BIF_P->sched_group_ix)
+               goto error;
            old = erts_set_runq_proc(BIF_P, new, &bound);
            if (!bound)
                old = NULL;
@@ -2097,6 +2099,37 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
 	   ERTS_BIF_YIELD_RETURN_X(BIF_P, old_value, am_scheduler);
        else
 	   BIF_RET(old_value);
+   }
+   else if (BIF_ARG_1 == am_scheduling_group) {
+       ErtsSchedulingGroup *group = NULL;
+       ErtsRunQueue *runq;
+       Uint ix;
+       int bound;
+
+       if (is_not_atom(BIF_ARG_2))
+           goto error;
+
+       for (ix = 0; ix < erts_no_scheduling_groups; ix++) {
+           ErtsSchedulingGroup *candidate = ERTS_SCHEDULING_GROUP_IX(ix);
+           if (candidate->id == BIF_ARG_2) {
+               group = candidate;
+               break;
+           }
+       }
+       if (!group)
+           goto error;
+
+       runq = erts_get_runq_proc(BIF_P, &bound);
+       if (bound && runq->sched_group_ix != group->ix)
+           goto error;
+
+       old_value = ERTS_SCHEDULING_GROUP_FOR_PROC(BIF_P)->id;
+       BIF_P->sched_group_ix = group->ix;
+
+       if (!bound && runq->sched_group_ix != group->ix)
+           ERTS_BIF_YIELD_RETURN_X(BIF_P, old_value, am_scheduling_group);
+       else
+           BIF_RET(old_value);
    }
    else if (BIF_ARG_1 == am_fullsweep_after) {
        Sint i;

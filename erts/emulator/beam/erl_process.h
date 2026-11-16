@@ -1170,6 +1170,7 @@ struct process {
 
     Uint16 gen_gcs;             /* Number of (minor) generational GCs. */
     Uint16 max_gen_gcs;         /* Max minor gen GCs before fullsweep. */
+    Uint16 sched_group_ix;
     Eterm *high_water;
     Eterm *old_hend;            /* Heap pointers for generational GC. */
     Eterm *old_htop;
@@ -1905,9 +1906,8 @@ extern int erts_system_profile_ts_type;
 #define ERTS_SCHEDULING_GROUP_FOR_SCHEDULER(Schdlr)                     \
   (ERTS_SCHEDULING_GROUP_FOR_RUNQ(Schdlr->run_queue))
 
-/* For now all processes are assigned to the default group */
 #define ERTS_SCHEDULING_GROUP_FOR_PROC(Proc)                            \
-  (ERTS_SCHEDULING_GROUP_IX(0))
+  (ERTS_SCHEDULING_GROUP_IX((Proc)->sched_group_ix))
 
 #define ERTS_NUM_DIRTY_CPU_RUNQS_PER_GROUP 1
 #define ERTS_NUM_DIRTY_IO_RUNQS_PER_GROUP  1

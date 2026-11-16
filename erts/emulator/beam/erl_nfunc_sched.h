@@ -287,6 +287,7 @@ erts_make_dirty_shadow_proc(ErtsSchedulerData *esdp, Process *c_p)
 
     sproc->next = c_p;
     sproc->common.id = c_p->common.id;
+    sproc->sched_group_ix = c_p->sched_group_ix;
 
     erts_cache_dirty_shadow_proc(sproc);
 

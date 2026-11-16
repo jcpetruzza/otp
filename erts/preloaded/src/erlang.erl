@@ -8472,6 +8472,17 @@ of the flag.
   
   If `N` = 0, call saving is disabled for the process, which is the default.
   Whenever the size of the call saving list is set, its contents are reset.
+
+- ```erlang
+  process_flag(scheduling_group, atom())
+  ```
+  {: #process_flag_scheduling_group }
+
+  Sets the scheduling group of the calling process by name. `Group` must be a
+  key returned by
+  [`erlang:system_info(scheduling_groups)`](#system_info_scheduling_groups),
+  otherwise a `badarg` exception is raised. Locally spawned processes inherit
+  their parent's scheduling group.
   
 - ```erlang
   process_flag(sensitive, boolean())
@@ -8533,6 +8544,9 @@ of the flag.
                   (save_calls, N) -> OldN when
       N :: 0..10000,
       OldN :: 0..10000;
+                  (scheduling_group, Group) -> OldGroup when
+      Group :: atom(),
+      OldGroup :: atom();
                   (sensitive, Boolean) -> OldBoolean when
       Boolean :: boolean(),
       OldBoolean :: boolean();
@@ -8575,6 +8589,7 @@ process_flag(_Flag, _Value) ->
       priority_messages |
       reductions |
       registered_name |
+      scheduling_group |
       sequential_trace_token |
       stack_size |
       status |
@@ -8624,6 +8639,7 @@ process_flag(_Flag, _Value) ->
       {priority_messages, Enabled :: boolean()} |
       {reductions, Number :: non_neg_integer()} |
       {registered_name, [] | (Atom :: atom())} |
+      {scheduling_group, Group :: atom()} |
       {sequential_trace_token, [] | (SequentialTraceToken :: term())} |
       {stack_size, Size :: non_neg_integer()} |
       {status, Status :: exiting | garbage_collecting | waiting | running | runnable | suspended} |
@@ -8820,6 +8836,10 @@ Valid `InfoTuple`s with corresponding `Item`s:
 
 - **`{registered_name, Atom}`** - `Atom` is the registered process name. If the
   process has no registered name, this tuple is not present in the list.
+
+- **`{scheduling_group, Group}`** - `Group` is the scheduling group assigned to
+  the process. For more information, see
+  [`process_flag(scheduling_group, Group)`](#process_flag_scheduling_group).
 
 - **`{sequential_trace_token, [] | SequentialTraceToken}`** -
   `SequentialTraceToken` is the sequential trace token for the process. This
