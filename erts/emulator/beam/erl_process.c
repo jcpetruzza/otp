@@ -178,6 +178,31 @@ typedef struct {
 } ErtsMigrationPathsAlloc;
 
 typedef struct {
+    Uint32 flags;
+    struct {
+        int max_len;
+        int avail;
+        int reds;
+        int migration_limit;
+        int emigrate_to;
+        int immigrate_from;
+    } prio[ERTS_NO_PRIO_LEVELS];
+    int reds;
+    int full_reds;
+    int full_reds_history_sum;
+    int full_reds_history_change;
+    int max_len;
+#if ERTS_HAVE_SCHED_UTIL_BALANCING_SUPPORT
+    int sched_util;
+#endif
+} ErtsRunQueueBalance;
+
+typedef struct {
+    int qix;
+    int len;
+} ErtsRunQueueCompare;
+
+typedef struct {
     union {
         erts_atomic32_t active;
         char align__[ERTS_CACHE_LINE_SIZE];
@@ -198,6 +223,10 @@ typedef struct {
     ErtsSchedSuspend schdlr_sspnd;
     ErtsRunQueuesBalanceInfo balance_info;
     ErtsMigrationPathsAlloc mpaths;
+
+    ErtsRunQueueBalance *run_queue_info;
+    ErtsRunQueueCompare *run_queue_compare;
+
     ErtsRunQueueSupervision runq_supervision;
 
     ErtsDirtyCount dirty_count erts_align_attribute(ERTS_CACHE_LINE_SIZE);
@@ -4773,33 +4802,6 @@ end_try_steal_task:
 
 /* Run queue balancing */
 
-typedef struct {
-    Uint32 flags;
-    struct {
-	int max_len;
-	int avail;
-	int reds;
-	int migration_limit;
-	int emigrate_to;
-	int immigrate_from;
-    } prio[ERTS_NO_PRIO_LEVELS];
-    int reds;
-    int full_reds;
-    int full_reds_history_sum;
-    int full_reds_history_change;
-    int max_len;
-#if ERTS_HAVE_SCHED_UTIL_BALANCING_SUPPORT
-    int sched_util;
-#endif
-} ErtsRunQueueBalance;
-static ErtsRunQueueBalance *run_queue_info;
-
-typedef struct {
-    int qix;
-    int len;
-} ErtsRunQueueCompare;
-static ErtsRunQueueCompare *run_queue_compare;
-
 static int
 rqc_len_cmp(const void *x, const void *y)
 {
@@ -4949,7 +4951,9 @@ check_balance(ErtsRunQueue *c_rq)
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(c_rq);
     ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
+    ErtsRunQueueBalance *run_queue_info = sched_group_data->run_queue_info;
     ErtsRunQueueBalance avg = {0};
+    ErtsRunQueueCompare *run_queue_compare = sched_group_data->run_queue_compare;
     Sint64 scheds_reds, full_scheds_reds;
     int forced, active, current_active, half_full_scheds, full_scheds,
 	mmax_len, blnc_no_rqs, qix, pix, freds_hist_ix;
@@ -6289,17 +6293,6 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 
     }
 
-
-    if (erts_no_run_queues != 1) {
-	run_queue_info = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
-				    (sizeof(ErtsRunQueueBalance)
-				    * erts_no_run_queues));
-	run_queue_compare = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
-				       (sizeof(ErtsRunQueueCompare)
-					* erts_no_run_queues));
-    }
-
-
     n = (int) no_schedulers;
     erts_no_schedulers = n;
     erts_no_total_schedulers = n;
@@ -6426,6 +6419,16 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
         ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
         ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
+        Uint no_run_queues = ERTS_SCHEDULING_GROUP_IX(0)->no_run_queues;
+
+        if (no_run_queues != 1) {
+            sched_group_data->run_queue_info = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
+                                                          sizeof(ErtsRunQueueBalance)
+                                                          * no_run_queues);
+            sched_group_data->run_queue_compare = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
+                                                             sizeof(ErtsRunQueueCompare)
+                                                             * no_run_queues);
+        }
 
         init_no_runqs(balance_info, no_schedulers_online, no_schedulers_online);
         balance_info->last_active_runqs = no_schedulers;
