@@ -71,7 +71,8 @@ document etp-help
 %
 % System inspection
 %   etp-system-info, etp-schedulers, etp-processes, etp-processes-x, etp-ports,
-%   etp-lc-dump, etp-migration-info, etp-processes-memory,
+%   etp-lc-dump, etp-migration-info, etp-migration-info-group,
+%   etp-processes-memory,
 %   etp-compile-info, etp-config-h-info
 %
 % Platform specific (when gdb fails you)
@@ -4076,17 +4077,31 @@ document etp-disasm
 %---------------------------------------------------------------------------
 end
 
-define etp-migration-info
-  set $minfo = (ErtsMigrationPaths *) *((UWord *) &erts_migration_paths)
+define etp-migration-info-group
+  set $sched_group_ix = $arg0
+  set $sched_group = &erts_aligned_scheduling_groups[$sched_group_ix].esg
+  set $minfo = (ErtsMigrationPaths *) *((UWord *) &erts_migration_paths[$sched_group_ix])
   set $rq_ix = 0
-  while $rq_ix < erts_no_run_queues
+  while $rq_ix < $sched_group->no_run_queues
     if ($minfo->mpath[$rq_ix])
       printf "---\n"
-      printf "Run Queue Ix: %d\n", $rq_ix
+      printf "Run Queue Ix: %d\n", $sched_group->first_scheduler_ix + $rq_ix
       etp-rq-flags-int $minfo->mpath[$rq_ix].flags
     end
     set $rq_ix++
   end
+end
+
+document etp-migration-info-group
+%---------------------------------------------------------------------------
+% etp-migration-info-group SchedulingGroupIx
+%
+% Print migration information for a scheduling group
+%---------------------------------------------------------------------------
+end
+
+define etp-migration-info
+  etp-migration-info-group 0
 end
 
 document etp-migration-info
