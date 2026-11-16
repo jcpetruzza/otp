@@ -943,7 +943,7 @@ int main(int argc, char **argv)
                       i++;
                       break;
 		  case 'S':
-		      if (argv[i][2] == 'P') {
+                      if (argv[i][2] == 'G' || argv[i][2] == 'P') {
 			  if (argv[i][3] != '\0')
 			      goto the_default;
 		      }

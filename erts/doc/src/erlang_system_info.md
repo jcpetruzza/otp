@@ -743,6 +743,9 @@ Returns information about schedulers, scheduling and threads in the current syst
   dirty CPU scheduler, online dirty CPU scheduler, and dirty IO scheduler
   counts.
 
+  Scheduling groups can be configured at startup with the
+  [`+SG`](erl_cmd.md#+SG) command-line option.
+
 - `schedulers`{: #system_info_schedulers } - Returns the number of scheduler
   threads used by the emulator. Scheduler threads online schedules Erlang
   processes and Erlang ports, and execute Erlang code and Erlang linked-in

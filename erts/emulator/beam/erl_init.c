@@ -85,7 +85,9 @@ extern void ConNormalExit(void);
 extern void ConWaitForExit(void);
 #endif
 
-static void erl_init(int ncpu,
+typedef struct SchedulingConfig_ SchedulingConfig;
+
+static void erl_init(const SchedulingConfig *sched_cfg,
 		     int proc_tab_sz,
 		     int legacy_proc_tab,
 		     int port_tab_sz,
@@ -244,10 +246,32 @@ void erl_error(const char *fmt, va_list args)
     erts_vfprintf(stderr, fmt, args);
 }
 
-static int early_init(int *argc, char **argv);
+struct SchedulingConfig_ {
+    int ncpu;
+    int inferred_no_schedulers;
+    int inferred_no_schedulers_online;
+
+    int sched_group_count;
+
+    const char *sched_group_name[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_normal_no_schedulers[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_normal_no_schedulers_online[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_normal_no_schedulers_online_cap[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_normal_percent[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_normal_percent_online[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_dirty_cpu_no_schedulers[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_dirty_cpu_no_schedulers_online[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_dirty_cpu_no_schedulers_online_cap[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_dirty_cpu_percent[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+    int sched_group_dirty_cpu_percent_online[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+
+    int sched_group_dirty_io_no_schedulers[ERTS_MAX_NO_OF_SCHEDULING_GROUPS];
+};
+
+static void early_init(int *argc, char **argv, SchedulingConfig *);
 
 static void
-erl_init(int ncpu,
+erl_init(const SchedulingConfig *sched_cfg,
 	 int proc_tab_sz,
 	 int legacy_proc_tab,
 	 int port_tab_sz,
@@ -261,8 +285,6 @@ erl_init(int ncpu,
          int module_tab_sz,
          int export_tab_sz)
 {
-    const char *sg_names[] = {"default"};
-
     init_global_literals();
     init_atom_table();
     erts_monitor_link_init();
@@ -270,14 +292,14 @@ erl_init(int ncpu,
     erts_proc_sig_queue_init(); /* Must be after erts_bif_unique_init(); */
     erts_init_time(time_correction, time_warp_mode);
     erts_init_sys_common_misc();
-    erts_init_process(ncpu, proc_tab_sz, legacy_proc_tab);
-    erts_init_scheduling(1,
-                         sg_names,
-                         &no_schedulers,
-                         &no_schedulers_online,
-                         &no_dirty_cpu_schedulers,
-                         &no_dirty_cpu_schedulers_online,
-                         &no_dirty_io_schedulers,
+    erts_init_process(sched_cfg->ncpu, proc_tab_sz, legacy_proc_tab);
+    erts_init_scheduling(sched_cfg->sched_group_count,
+                         sched_cfg->sched_group_name,
+                         sched_cfg->sched_group_normal_no_schedulers,
+                         sched_cfg->sched_group_normal_no_schedulers_online,
+                         sched_cfg->sched_group_dirty_cpu_no_schedulers,
+                         sched_cfg->sched_group_dirty_cpu_no_schedulers_online,
+                         sched_cfg->sched_group_dirty_io_no_schedulers,
                          erts_no_poll_threads);
     erts_late_init_time_sup();
     erts_init_cpu_topology(); /* Must be after init_scheduling */
@@ -682,6 +704,7 @@ __decl_noreturn void __noreturn  erts_usage(void)
 		 ERTS_SCHED_THREAD_MAX_STACK_SIZE,
                  ERTS_DEFAULT_DIO_SCHED_STACK_SIZE);
     erts_fprintf(stderr, "-spp Bool      set port parallelism scheduling hint\n");
+    erts_fprintf(stderr, "-SG Group      add or select a scheduling group\n");
     erts_fprintf(stderr, "-S n1:n2       set number of schedulers (n1), and number of\n");
     erts_fprintf(stderr, "               schedulers online (n2); maximum for both\n");
     erts_fprintf(stderr, "               numbers is %d\n",
@@ -773,9 +796,443 @@ static void ethr_ll_free(void *ptr)
     erts_free(ERTS_ALC_T_ETHR_LL, ptr);
 }
 
+static void
+scheduling_config_init(SchedulingConfig *cfg,
+                       int ncpu,
+                       int ncpuonln,
+                       int ncpuavail,
+                       int ncpuquota)
+{
+    cfg->ncpu = ncpu;
+    cfg->inferred_no_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+
+    if (ncpuavail > 0) {
+        if (ncpuquota > 0) {
+            cfg->inferred_no_schedulers_online = MIN(ncpuquota, ncpuavail);
+        } else {
+            cfg->inferred_no_schedulers_online = ncpuavail;
+        }
+    } else if (ncpuonln > 0) {
+        cfg->inferred_no_schedulers_online = ncpuonln;
+    } else {
+        cfg->inferred_no_schedulers_online = cfg->inferred_no_schedulers;
+    }
+
+    cfg->sched_group_count = 0;
+}
 
 static int
-early_init(int *argc, char **argv) /*
+scheduling_config_add_group(SchedulingConfig *cfg, const char *name)
+{
+    int j = 0, i = cfg->sched_group_count++;
+    if (cfg->sched_group_count > ERTS_MAX_NO_OF_SCHEDULING_GROUPS) {
+        erts_fprintf(stderr, "too many scheduling groups\n");
+        erts_usage();
+    }
+
+    do {
+        int invalid_name = (unsigned char) name[j] > 127
+            || (j == 0 && name[j] == 0)
+            || (j == MAX_ATOM_CHARACTERS && name[j] != 0);
+        if (invalid_name) {
+            erts_fprintf(stderr, "invalid scheduling group name: '%s'\n", name);
+            erts_usage();
+        }
+    } while (name[j++] != 0);
+
+    cfg->sched_group_name[i] = name;
+
+    cfg->sched_group_normal_no_schedulers[i] = 0;
+    cfg->sched_group_normal_no_schedulers_online[i] = 0;
+    cfg->sched_group_normal_no_schedulers_online_cap[i] = INT_MAX;
+    cfg->sched_group_normal_percent[i] = 100;
+    cfg->sched_group_normal_percent_online[i] = 100;
+
+    cfg->sched_group_dirty_cpu_no_schedulers[i] = 0;
+    cfg->sched_group_dirty_cpu_no_schedulers_online[i] = 0;
+    cfg->sched_group_dirty_cpu_no_schedulers_online_cap[i] = INT_MAX;
+    cfg->sched_group_dirty_cpu_percent[i] = 100;
+    cfg->sched_group_dirty_cpu_percent_online[i] = 100;
+
+    cfg->sched_group_dirty_io_no_schedulers[i] = 10;
+
+    return i;
+}
+
+static int
+scheduling_config_get_group(const SchedulingConfig *sched_cfg,
+                            const char *name)
+{
+    const char * const *names = sched_cfg->sched_group_name;
+    for (int i = 0; i < sched_cfg->sched_group_count; i++) {
+        if (sys_strcmp(names[i], name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void
+parse_scheduler_counts_arg(const char *arg,
+                           int *count,
+                           int *count_online,
+                           int *online_cap,
+                           const char *group_name,
+                           const char *label)
+{
+    int tot, onln, onln_cap = INT_MAX;
+    switch (sscanf(arg, "%d:%d", &tot, &onln)) {
+    case 0:
+        switch (sscanf(arg, ":%d", &onln)) {
+        case 1:
+            tot = *count;
+            goto chk_S;
+        default:
+            goto bad_S;
+        }
+    case 1:
+        if (tot <= 0) {
+            onln = tot;
+        } else {
+            onln = *count_online;
+            onln_cap = *online_cap;
+            onln_cap = MIN(tot, onln_cap);
+        }
+        goto chk_S;
+    case 2:
+        if (tot > 0 && onln > 0 && tot < onln) {
+            if (sys_strcmp(group_name, "default") != 0) {
+                erts_fprintf(stderr, "group %s: ", group_name);
+            }
+            erts_fprintf(stderr,
+                         "bad amount of %s online %d "
+                         "(total amount of %s %d)\n",
+                         label, onln, label, tot);
+            erts_usage();
+        }
+
+    chk_S:
+        if (ERTS_MAX_NO_OF_DIRTY_CPU_SCHEDULERS < tot) {
+            if (sys_strcmp(group_name, "default") != 0) {
+                erts_fprintf(stderr, "group %s: ", group_name);
+            }
+            erts_fprintf(stderr,
+                         "bad amount of %s %d\n",
+                         label,
+                         tot);
+            erts_usage();
+        }
+
+        *count = tot;
+        *count_online = onln;
+        *online_cap = onln_cap;
+        break;
+    default:
+    bad_S:
+        if (sys_strcmp(group_name, "default") != 0) {
+            erts_fprintf(stderr, "group %s: ", group_name);
+        }
+        erts_fprintf(stderr, "bad amount of %s %s\n", label, arg);
+        erts_usage();
+        break;
+    }
+
+    VERBOSE(DEBUG_SYSTEM,
+            ("group %s: setting %s to %d:%d(%d)\n",
+             group_name,
+             label,
+             *count,
+             *count_online,
+             *online_cap != INT_MAX ? *online_cap : *count_online));
+}
+
+static void
+parse_scheduler_percent_arg(const char *arg,
+                            int *percent,
+                            int *percent_online,
+                            const char *group_name,
+                            const char *label)
+{
+    int ptot, ponln;
+    switch (sscanf(arg, "%d:%d", &ptot, &ponln)) {
+    case 0:
+        switch (sscanf(arg, ":%d", &ponln)) {
+        case 1:
+            if (ponln < 0)
+                goto bad_SDPcpu;
+            ptot = 100;
+            goto chk_SDPcpu;
+        default:
+            goto bad_SDPcpu;
+        }
+    case 1:
+        if (ptot < 0)
+            goto bad_SDPcpu;
+        ponln = ptot < 100 ? ptot : 100;
+        goto chk_SDPcpu;
+    case 2:
+        if (ptot < 0 || ponln < 0)
+            goto bad_SDPcpu;
+    chk_SDPcpu:
+        *percent = ptot;
+        *percent_online = ponln;
+        break;
+    default:
+    bad_SDPcpu:
+        if (sys_strcmp(group_name, "default") != 0) {
+            erts_fprintf(stderr, "group %s: ", group_name);
+        }
+        erts_fprintf(stderr, "bad %s percentage specifier %s\n", label, arg);
+        erts_usage();
+        break;
+    }
+    VERBOSE(DEBUG_SYSTEM,
+            ("group %s using %d:%d %s percentages\n",
+             group_name,
+             *percent,
+             *percent_online,
+             label));
+}
+
+static void
+complete_scheduler_counts(const char *label,
+                          int inferred_available,
+                          int num_groups,
+                          int *requested_counts,
+                          const int *inferred_caps,
+                          const int *default_caps,
+                          const char * const *names)
+{
+    int available = inferred_available;
+
+    int unspecified = 0;
+
+    /* Figure out how much we can give to those without specific requests */
+    for (int i = 0; i < num_groups; i++) {
+        int requested = requested_counts[i];
+        int default_cap = default_caps ? default_caps[i] : INT_MAX;
+
+        if (requested == 0 && default_cap != INT_MAX) {
+            available -= MIN(inferred_available, default_cap);
+        } else if (requested <= 0) {
+            unspecified += 1;
+        } else {
+            available -= requested;
+        }
+    }
+
+    if (unspecified > 0) {
+        available = MAX(1, available / unspecified);
+    }
+
+    /* Complete all unspecified requests */
+    for (int i = 0; i < num_groups; i++) {
+        int requested = requested_counts[i];
+        int inferred_cap = inferred_caps ? inferred_caps[i] : INT_MAX;
+        int default_cap = default_caps ? default_caps[i] : INT_MAX;
+        int given;
+
+        if (requested > 0) {
+            given = requested;
+        } else if (requested < 0) {
+            given = available + requested;
+
+            if (given < 1) {
+                if (num_groups > 1) {
+                    erts_fprintf(stderr, "group %s: ", names[i]);
+                }
+                erts_fprintf(stderr, "bad amount of %s %d\n", label, given);
+                erts_usage();
+            }
+        } else if (default_cap != INT_MAX) {
+            given = inferred_available;
+        } else {
+            given = available;
+        }
+
+        if (requested <= 0) {
+            given = MIN(given, inferred_cap);
+        }
+        given = MIN(given, default_cap);
+
+        if (ERTS_MAX_NO_OF_SCHEDULERS < given) {
+            if (num_groups > 1) {
+                erts_fprintf(stderr, "group %s: ", names[i]);
+            }
+            erts_fprintf(stderr, "bad amount of %s %d\n", label, given);
+            erts_usage();
+        }
+
+        requested_counts[i] = given;
+    }
+}
+
+static void
+apply_scheduler_count_percentages(const char *label,
+                                  int num_groups,
+                                  int *completed_counts,
+                                  int *requested_percents,
+                                  const int *count_caps,
+                                  const char * const *names)
+{
+    for (int i = 0; i < num_groups; i++) {
+        int count = completed_counts[i];
+        int percent = requested_percents[i];
+        int cap = count_caps ? count_caps[i] : INT_MAX;
+
+        if (percent != 100) {
+            count = MAX(1, count * percent / 100);
+
+            if (ERTS_MAX_NO_OF_SCHEDULERS < count) {
+                if (num_groups > 1) {
+                    erts_fprintf(stderr, "group %s: ", names[i]);
+                }
+                erts_fprintf(stderr, "bad amount of %s %d\n", label, count);
+                erts_usage();
+            }
+
+            requested_percents[i] = 100;
+        }
+
+        count = MIN(count, cap);
+
+        completed_counts[i] = count;
+    }
+}
+
+static void
+check_online_scheduler_counts(const char *label,
+                              int num_groups,
+                              const int *schedulers,
+                              const int *schedulers_online,
+                              const char * const *names)
+{
+    for (int i = 0; i < num_groups; i++) {
+        int no_schedulers = schedulers[i];
+        int no_sched_onln = schedulers_online[i];
+        if (no_sched_onln > no_schedulers) {
+            if (num_groups > 1) {
+                erts_fprintf(stderr, "group %s: ", names[i]);
+            }
+            erts_fprintf(stderr,
+                         "bad amount of %ss online %d "
+                         "(total amount of %ss %d)\n",
+                         label,
+                         no_sched_onln,
+                         label,
+                         no_schedulers);
+            erts_usage();
+        }
+    }
+}
+
+static void
+scheduling_config_resolve(SchedulingConfig *sched_cfg)
+{
+    complete_scheduler_counts("schedulers",
+                              sched_cfg->inferred_no_schedulers,
+                              sched_cfg->sched_group_count,
+                              sched_cfg->sched_group_normal_no_schedulers,
+                              NULL,
+                              NULL,
+                              sched_cfg->sched_group_name);
+    complete_scheduler_counts("schedulers online",
+                              sched_cfg->inferred_no_schedulers_online,
+                              sched_cfg->sched_group_count,
+                              sched_cfg->sched_group_normal_no_schedulers_online,
+                              sched_cfg->sched_group_normal_no_schedulers,
+                              sched_cfg->sched_group_normal_no_schedulers_online_cap,
+                              sched_cfg->sched_group_name);
+    apply_scheduler_count_percentages("schedulers",
+                                      sched_cfg->sched_group_count,
+                                      sched_cfg->sched_group_normal_no_schedulers,
+                                      sched_cfg->sched_group_normal_percent,
+                                      NULL,
+                                      sched_cfg->sched_group_name);
+    apply_scheduler_count_percentages("schedulers online",
+                                      sched_cfg->sched_group_count,
+                                      sched_cfg->sched_group_normal_no_schedulers_online,
+                                      sched_cfg->sched_group_normal_percent_online,
+                                      NULL,
+                                      sched_cfg->sched_group_name);
+    check_online_scheduler_counts("scheduler",
+                                  sched_cfg->sched_group_count,
+                                  sched_cfg->sched_group_normal_no_schedulers,
+                                  sched_cfg->sched_group_normal_no_schedulers_online,
+                                  sched_cfg->sched_group_name);
+
+    complete_scheduler_counts("dirty CPU schedulers",
+                              sched_cfg->inferred_no_schedulers,
+                              sched_cfg->sched_group_count,
+                              sched_cfg->sched_group_dirty_cpu_no_schedulers,
+                              NULL,
+                              NULL,
+                              sched_cfg->sched_group_name);
+    complete_scheduler_counts("dirty CPU schedulers online",
+                              sched_cfg->inferred_no_schedulers_online,
+                              sched_cfg->sched_group_count,
+                              sched_cfg->sched_group_dirty_cpu_no_schedulers_online,
+                              sched_cfg->sched_group_dirty_cpu_no_schedulers,
+                              sched_cfg->sched_group_dirty_cpu_no_schedulers_online_cap,
+                              sched_cfg->sched_group_name);
+    apply_scheduler_count_percentages("dirty CPU schedulers",
+                                      sched_cfg->sched_group_count,
+                                      sched_cfg->sched_group_dirty_cpu_no_schedulers,
+                                      sched_cfg->sched_group_dirty_cpu_percent,
+                                      sched_cfg->sched_group_normal_no_schedulers,  /* cap by normal schedulers */
+                                      sched_cfg->sched_group_name);
+    apply_scheduler_count_percentages("dirty CPU schedulers online",
+                                      sched_cfg->sched_group_count,
+                                      sched_cfg->sched_group_dirty_cpu_no_schedulers_online,
+                                      sched_cfg->sched_group_dirty_cpu_percent_online,
+                                      sched_cfg->sched_group_normal_no_schedulers_online, /* cap normal online schedulers */
+                                      sched_cfg->sched_group_name);
+    check_online_scheduler_counts("dirty CPU scheduler",
+                                  sched_cfg->sched_group_count,
+                                  sched_cfg->sched_group_dirty_cpu_no_schedulers,
+                                  sched_cfg->sched_group_dirty_cpu_no_schedulers_online,
+                                  sched_cfg->sched_group_name);
+}
+
+static void
+scheduling_config_totals(const SchedulingConfig *sched_config,
+                         int *no_schedulers,
+                         int *no_schedulers_online,
+                         int *no_dirty_cpu_schedulers,
+                         int *no_dirty_cpu_schedulers_online,
+                         int *no_dirty_io_schedulers)
+{
+    *no_schedulers = *no_schedulers_online = 0;
+    *no_dirty_cpu_schedulers = *no_dirty_cpu_schedulers_online = 0;
+    *no_dirty_io_schedulers = 0;
+
+    for (int i = 0; i < sched_config->sched_group_count; i++) {
+        *no_schedulers +=
+            sched_config->sched_group_normal_no_schedulers[i];
+        *no_schedulers_online +=
+            sched_config->sched_group_normal_no_schedulers_online[i];
+
+        *no_dirty_cpu_schedulers +=
+            sched_config->sched_group_dirty_cpu_no_schedulers[i];
+        *no_dirty_cpu_schedulers_online +=
+            sched_config->sched_group_dirty_cpu_no_schedulers_online[i];
+
+        *no_dirty_io_schedulers +=
+            sched_config->sched_group_dirty_io_no_schedulers[i];
+    }
+}
+
+static void
+check_total_scheduler_count(const char *label, int count, int limit)
+{
+    if (limit < count) {
+        erts_fprintf(stderr, "bad amount of %s %d\n", label, count);
+        erts_usage();
+    }
+}
+
+static void
+early_init(int *argc, char **argv, SchedulingConfig *sched_cfg) /*
 				   * Only put things here which are
 				   * really important initialize
 				   * early!
@@ -786,16 +1243,8 @@ early_init(int *argc, char **argv) /*
     int ncpuonln;
     int ncpuavail;
     int ncpuquota;
-    int schdlrs;
-    int schdlrs_onln;
-    int schdlrs_percentage = 100;
-    int schdlrs_onln_percentage = 100;
     int max_main_threads;
-    int dirty_cpu_scheds;
-    int dirty_cpu_scheds_online;
-    int dirty_cpu_scheds_pctg = 100;
-    int dirty_cpu_scheds_onln_pctg = 100;
-    int dirty_io_scheds;
+    int curr_sched_group;
     int aux_threads = 1;
     int max_reader_groups;
     int reader_groups;
@@ -828,6 +1277,9 @@ early_init(int *argc, char **argv) /*
 				     &ncpuavail,
 				     &ncpuquota);
 
+    scheduling_config_init(sched_cfg, ncpu, ncpuonln, ncpuavail, ncpuquota);
+    curr_sched_group = scheduling_config_add_group(sched_cfg, "default");
+
     ignore_break = 0;
     replace_intr = 0;
     program = argv[0];
@@ -852,26 +1304,8 @@ early_init(int *argc, char **argv) /*
      * We need to know the number of schedulers to use before we
      * can initialize the allocators.
      */
-    no_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
-
-    if (ncpuavail > 0) {
-        if (ncpuquota > 0) {
-            no_schedulers_online = MIN(ncpuquota, ncpuavail);
-        } else {
-            no_schedulers_online = ncpuavail;
-        }
-    } else if (ncpuonln > 0) {
-        no_schedulers_online = ncpuonln;
-    } else {
-        no_schedulers_online = no_schedulers;
-    }
-
-    schdlrs = no_schedulers;
-    schdlrs_onln = no_schedulers_online;
-
-    dirty_cpu_scheds = no_schedulers;
-    dirty_cpu_scheds_online = no_schedulers_online;
-    dirty_io_scheds = 10;
+    no_schedulers = sched_cfg->inferred_no_schedulers;
+    no_schedulers_online = sched_cfg->inferred_no_schedulers_online;
 
     envbufsz = sizeof(envbuf);
 
@@ -956,138 +1390,40 @@ early_init(int *argc, char **argv) /*
 		    break;
 		}
 		case 'S' :
-		    if (argv[i][2] == 'P') {
-			int ptot, ponln;
-			char *arg = get_arg(argv[i]+3, argv[i+1], &i);
-			switch (sscanf(arg, "%d:%d", &ptot, &ponln)) {
-			case 0:
-			    switch (sscanf(arg, ":%d", &ponln)) {
-			    case 1:
-				if (ponln < 0)
-				    goto bad_SP;
-				ptot = 100;
-				goto chk_SP;
-			    default:
-				goto bad_SP;
-			    }
-			case 1:
-			    if (ptot < 0)
-				goto bad_SP;
-			    ponln = ptot < 100 ? ptot : 100;
-			    goto chk_SP;
-			case 2:
-			    if (ptot < 0 || ponln < 0)
-				goto bad_SP;
-			chk_SP:
-			    schdlrs_percentage = ptot;
-			    schdlrs_onln_percentage = ponln;
-			    break;
-			default:
-                        bad_SP:
-                            erts_fprintf(stderr,
-                                         "bad schedulers percentage specifier %s\n",
-                                         arg);
-                            erts_usage();
-                            break;
+                    if (argv[i][2] == 'G') {
+                        char *arg = get_arg(argv[i]+3, argv[i+1], &i);
+                        curr_sched_group = scheduling_config_get_group(sched_cfg, arg);
+                        if (curr_sched_group < 0) {
+                            curr_sched_group = scheduling_config_add_group(sched_cfg, arg);
                         }
-
-                        VERBOSE(DEBUG_SYSTEM,
-                                ("using %d:%d scheduler percentages\n",
-                                 schdlrs_percentage, schdlrs_onln_percentage));
+                    } else if (argv[i][2] == 'P') {
+                        char *arg = get_arg(argv[i]+3, argv[i+1], &i);
+                        parse_scheduler_percent_arg(arg,
+                                                    &sched_cfg->sched_group_normal_percent[curr_sched_group],
+                                                    &sched_cfg->sched_group_normal_percent_online[curr_sched_group],
+                                                    sched_cfg->sched_group_name[curr_sched_group],
+                                                    "schedulers");
                     }
 		    else if (argv[i][2] == 'D') {
 			char *arg;
 			char *type = argv[i]+3;
 			if (sys_strncmp(type, "Pcpu", 4) == 0) {
-			    int ptot, ponln;
 			    arg = get_arg(argv[i]+7, argv[i+1], &i);
-			    switch (sscanf(arg, "%d:%d", &ptot, &ponln)) {
-			    case 0:
-				switch (sscanf(arg, ":%d", &ponln)) {
-				case 1:
-				    if (ponln < 0)
-					goto bad_SDPcpu;
-				    ptot = 100;
-				    goto chk_SDPcpu;
-				default:
-				    goto bad_SDPcpu;
-				}
-			    case 1:
-				if (ptot < 0)
-				    goto bad_SDPcpu;
-				ponln = ptot < 100 ? ptot : 100;
-				goto chk_SDPcpu;
-			    case 2:
-				if (ptot < 0 || ponln < 0)
-				    goto bad_SDPcpu;
-			    chk_SDPcpu:
-				dirty_cpu_scheds_pctg = ptot;
-				dirty_cpu_scheds_onln_pctg = ponln;
-				break;
-			    default:
-			    bad_SDPcpu:
-				erts_fprintf(stderr,
-					     "bad dirty CPU schedulers percentage specifier %s\n",
-					     arg);
-				erts_usage();
-				break;
-			    }
-			    VERBOSE(DEBUG_SYSTEM,
-				    ("using %d:%d dirty CPU scheduler percentages\n",
-				     dirty_cpu_scheds_pctg, dirty_cpu_scheds_onln_pctg));
+                            parse_scheduler_percent_arg(arg,
+                                                        &sched_cfg->sched_group_dirty_cpu_percent[curr_sched_group],
+                                                        &sched_cfg->sched_group_dirty_cpu_percent_online[curr_sched_group],
+                                                        sched_cfg->sched_group_name[curr_sched_group],
+                                                        "dirty CPU schedulers");
 			} else if (sys_strncmp(type, "cpu", 3) == 0) {
-			    int tot, onln;
 			    arg = get_arg(argv[i]+6, argv[i+1], &i);
-			    switch (sscanf(arg, "%d:%d", &tot, &onln)) {
-			    case 0:
-				switch (sscanf(arg, ":%d", &onln)) {
-				case 1:
-				    tot = no_schedulers;
-				    goto chk_SDcpu;
-				default:
-				    goto bad_SDcpu;
-				}
-			    case 1:
-				onln = tot < dirty_cpu_scheds_online ?
-				    tot : dirty_cpu_scheds_online;
-                                ERTS_FALLTHROUGH();
-			    case 2:
-			    chk_SDcpu:
-				if (tot > 0)
-				    dirty_cpu_scheds = tot;
-				else
-				    dirty_cpu_scheds = no_schedulers + tot;
-				if (onln > 0)
-				    dirty_cpu_scheds_online = onln;
-				else
-				    dirty_cpu_scheds_online = no_schedulers_online + onln;
-				if (dirty_cpu_scheds < 1 ||
-				    ERTS_MAX_NO_OF_DIRTY_CPU_SCHEDULERS < dirty_cpu_scheds) {
-				    erts_fprintf(stderr,
-						 "bad amount of dirty CPU schedulers %d\n",
-						 tot);
-				    erts_usage();
-				}
-				if (dirty_cpu_scheds_online < 1 ||
-				    dirty_cpu_scheds < dirty_cpu_scheds_online) {
-				    erts_fprintf(stderr,
-						 "bad amount of dirty CPU schedulers online %d "
-						 "(total amount of dirty CPU schedulers %d)\n",
-						 dirty_cpu_scheds_online, dirty_cpu_scheds);
-				    erts_usage();
-				}
-				break;
-			    default:
-			    bad_SDcpu:
-				erts_fprintf(stderr,
-					     "bad amount of dirty CPU schedulers %s\n",
-					     arg);
-				erts_usage();
-				break;
-			    }
-			    VERBOSE(DEBUG_SYSTEM,
-				    ("using %d:%d dirty CPU scheduler(s)\n", tot, onln));
+                            parse_scheduler_counts_arg(arg,
+                                                       &sched_cfg->sched_group_dirty_cpu_no_schedulers[curr_sched_group],
+                                                       &sched_cfg->sched_group_dirty_cpu_no_schedulers_online[curr_sched_group],
+                                                       &sched_cfg->sched_group_dirty_cpu_no_schedulers_online_cap[curr_sched_group],
+                                                       sched_cfg->sched_group_name[curr_sched_group],
+                                                       "dirty CPU schedulers");
 			} else if (sys_strncmp(type, "io", 2) == 0) {
+                            int dirty_io_scheds;
 			    arg = get_arg(argv[i]+5, argv[i+1], &i);
 			    dirty_io_scheds = atoi(arg);
 			    if (dirty_io_scheds < 1 ||
@@ -1097,8 +1433,10 @@ early_init(int *argc, char **argv) /*
 					     arg);
 				erts_usage();
 			    }
+                            sched_cfg->sched_group_dirty_io_no_schedulers[curr_sched_group] = dirty_io_scheds;
 			    VERBOSE(DEBUG_SYSTEM,
-				    ("using %d dirty I/O scheduler(s)\n", dirty_io_scheds));
+                                    ("group %s using %d dirty I/O scheduler(s)\n",
+                                     sched_cfg->sched_group_name[curr_sched_group], dirty_io_scheds));
 			} else {
 			    erts_fprintf(stderr,
 					 "bad or missing dirty scheduler specifier: %s\n",
@@ -1108,55 +1446,13 @@ early_init(int *argc, char **argv) /*
 			}
 		    }
 		    else {
-			int tot, onln;
 			char *arg = get_arg(argv[i]+2, argv[i+1], &i);
-			switch (sscanf(arg, "%d:%d", &tot, &onln)) {
-			case 0:
-			    switch (sscanf(arg, ":%d", &onln)) {
-			    case 1:
-				tot = no_schedulers;
-				goto chk_S;
-			    default:
-				goto bad_S;
-			    }
-			case 1:
-			    onln = tot < schdlrs_onln ? tot : schdlrs_onln;
-                            ERTS_FALLTHROUGH();
-			case 2:
-			chk_S:
-			    if (tot > 0)
-				schdlrs = tot;
-			    else
-				schdlrs = no_schedulers + tot;
-			    if (onln > 0)
-				schdlrs_onln = onln;
-			    else
-				schdlrs_onln = no_schedulers_online + onln;
-			    if (schdlrs < 1 || ERTS_MAX_NO_OF_SCHEDULERS < schdlrs) {
-				erts_fprintf(stderr,
-					     "bad amount of schedulers %d\n",
-					     tot);
-				erts_usage();
-			    }
-			    if (schdlrs_onln < 1 || schdlrs < schdlrs_onln) {
-				erts_fprintf(stderr,
-					     "bad amount of schedulers online %d "
-					     "(total amount of schedulers %d)\n",
-					     schdlrs_onln, schdlrs);
-				erts_usage();
-			    }
-			    break;
-			default:
-			bad_S:
-			    erts_fprintf(stderr,
-					 "bad amount of schedulers %s\n",
-					 arg);
-			    erts_usage();
-			    break;
-			}
-
-			VERBOSE(DEBUG_SYSTEM,
-				("using %d:%d scheduler(s)\n", tot, onln));
+                        parse_scheduler_counts_arg(arg,
+                                                   &sched_cfg->sched_group_normal_no_schedulers[curr_sched_group],
+                                                   &sched_cfg->sched_group_normal_no_schedulers_online[curr_sched_group],
+                                                   &sched_cfg->sched_group_normal_no_schedulers_online_cap[curr_sched_group],
+                                                   sched_cfg->sched_group_name[curr_sched_group],
+                                                   "schedulers");
 		    }
                     break;
 		default:
@@ -1169,53 +1465,36 @@ early_init(int *argc, char **argv) /*
         if (erts_async_max_threads < 1)
             erts_async_max_threads = 1;
 
-	/* apply any scheduler percentages */
-	if (schdlrs_percentage != 100 || schdlrs_onln_percentage != 100) {
-	    schdlrs = schdlrs * schdlrs_percentage / 100;
-	    schdlrs_onln = schdlrs_onln * schdlrs_onln_percentage / 100;
-	    if (schdlrs < 1)
-                schdlrs = 1;
-            if (ERTS_MAX_NO_OF_SCHEDULERS < schdlrs) {
-		erts_fprintf(stderr,
-			     "bad schedulers percentage %d "
-			     "(total amount of schedulers %d)\n",
-			     schdlrs_percentage, schdlrs);
-		erts_usage();
-	    }
-	    if (schdlrs_onln < 1)
-                schdlrs_onln = 1;
-            if (schdlrs < schdlrs_onln) {
-		erts_fprintf(stderr,
-			     "bad schedulers online percentage %d "
-			     "(total amount of schedulers %d, online %d)\n",
-			     schdlrs_onln_percentage, schdlrs, schdlrs_onln);
-		erts_usage();
-	    }
-	}
-	/* apply any dirty scheduler precentages */
-	if (dirty_cpu_scheds_pctg != 100 || dirty_cpu_scheds_onln_pctg != 100) {
-	    dirty_cpu_scheds = dirty_cpu_scheds * dirty_cpu_scheds_pctg / 100;
-	    dirty_cpu_scheds_online = dirty_cpu_scheds_online * dirty_cpu_scheds_onln_pctg / 100;
-	}
-	if (dirty_cpu_scheds > schdlrs)
-	    dirty_cpu_scheds = schdlrs;
-        if (dirty_cpu_scheds < 1)
-            dirty_cpu_scheds = 1;
-	if (dirty_cpu_scheds_online > schdlrs_onln)
-	    dirty_cpu_scheds_online = schdlrs_onln;
-	if (dirty_cpu_scheds_online < 1)
-	    dirty_cpu_scheds_online = 1;
     }
 
+    scheduling_config_resolve(sched_cfg);
+    scheduling_config_totals(sched_cfg,
+                             &no_schedulers,
+                             &no_schedulers_online,
+                             &no_dirty_cpu_schedulers,
+                             &no_dirty_cpu_schedulers_online,
+                             &no_dirty_io_schedulers);
 
-    no_schedulers = schdlrs;
-    no_schedulers_online = schdlrs_onln;
+    check_total_scheduler_count("schedulers",
+                                no_schedulers,
+                                ERTS_MAX_NO_OF_SCHEDULERS);
+    check_total_scheduler_count("schedulers online",
+                                no_schedulers_online,
+                                ERTS_MAX_NO_OF_SCHEDULERS);
+    check_total_scheduler_count("dirty CPU schedulers",
+                                no_dirty_cpu_schedulers,
+                                ERTS_MAX_NO_OF_DIRTY_CPU_SCHEDULERS);
+    check_total_scheduler_count("dirty CPU schedulers online",
+                                no_dirty_cpu_schedulers_online,
+                                ERTS_MAX_NO_OF_DIRTY_CPU_SCHEDULERS);
+    check_total_scheduler_count("dirty I/O schedulers",
+                                no_dirty_io_schedulers,
+                                ERTS_MAX_NO_OF_DIRTY_IO_SCHEDULERS);
 
     erts_no_schedulers = (Uint) no_schedulers;
-    erts_no_dirty_cpu_schedulers = no_dirty_cpu_schedulers = dirty_cpu_scheds;
-    no_dirty_cpu_schedulers_online = dirty_cpu_scheds_online;
-    erts_no_dirty_io_schedulers = no_dirty_io_schedulers = dirty_io_scheds;
-    erts_early_init_scheduling(no_schedulers + 1 + dirty_cpu_scheds);
+    erts_no_dirty_cpu_schedulers = no_dirty_cpu_schedulers;
+    erts_no_dirty_io_schedulers = no_dirty_io_schedulers;
+    erts_early_init_scheduling(no_schedulers + 1 + no_dirty_cpu_schedulers);
 
     alloc_opts.ncpu = ncpu;
     erts_alloc_init(argc, argv, &alloc_opts); /* Handles (and removes)
@@ -1293,8 +1572,6 @@ early_init(int *argc, char **argv) /*
     erts_ets_realloc_always_moves = false;
     erts_ets_always_compress = false;
     erts_dist_buf_busy_limit = ERTS_DE_BUSY_LIMIT;
-
-    return ncpu;
 }
 
 
@@ -1306,7 +1583,7 @@ erl_start(int argc, char **argv)
     int have_break_handler = 1;
     char envbuf[21]; /* enough for any 64-bit integer */
     size_t envbufsz;
-    int ncpu = early_init(&argc, argv);
+    SchedulingConfig sched_cfg;
     int proc_tab_sz = ERTS_DEFAULT_MAX_PROCESSES;
     int port_tab_sz = ERTS_DEFAULT_MAX_PORTS;
     int port_tab_sz_ignore_files = 0;
@@ -1319,6 +1596,8 @@ erl_start(int argc, char **argv)
     ErtsDbSpinCount db_spin_count = ERTS_DB_SPNCNT_NORMAL;
     int module_tab_sz = 0;
     int export_tab_sz = 0;
+
+    early_init(&argc, argv, &sched_cfg);
 
     /* Must be set up as early as possible for crash dump encryption to work
      * properly. */
@@ -1916,7 +2195,7 @@ erl_start(int argc, char **argv)
 		    (void) get_arg(argv[i]+6, argv[i+1], &i);
 		else if (sys_strcmp(type, "io") == 0)
 		    (void) get_arg(argv[i]+5, argv[i+1], &i);
-	    } else if (argv[i][2] == 'P')
+            } else if (argv[i][2] == 'G' || argv[i][2] == 'P')
 		(void) get_arg(argv[i]+3, argv[i+1], &i);
 	    else
 		(void) get_arg(argv[i]+2, argv[i+1], &i);
@@ -2554,7 +2833,7 @@ erl_start(int argc, char **argv)
     if (erts_dio_sched_thread_suggested_stack_size < ERTS_SCHED_THREAD_MIN_STACK_SIZE)
         erts_dio_sched_thread_suggested_stack_size = ERTS_SCHED_THREAD_MIN_STACK_SIZE;
 
-    erl_init(ncpu,
+    erl_init(&sched_cfg,
 	     proc_tab_sz,
 	     legacy_proc_tab,
 	     port_tab_sz,
