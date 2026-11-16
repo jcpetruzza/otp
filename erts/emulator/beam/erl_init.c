@@ -261,20 +261,24 @@ erl_init(int ncpu,
          int module_tab_sz,
          int export_tab_sz)
 {
+    const char *sg_names[] = {"default"};
+
     init_global_literals();
+    init_atom_table();
     erts_monitor_link_init();
     erts_bif_unique_init();
     erts_proc_sig_queue_init(); /* Must be after erts_bif_unique_init(); */
     erts_init_time(time_correction, time_warp_mode);
     erts_init_sys_common_misc();
     erts_init_process(ncpu, proc_tab_sz, legacy_proc_tab);
-    erts_init_scheduling(no_schedulers,
-			 no_schedulers_online,
-                         erts_no_poll_threads,
-			 no_dirty_cpu_schedulers,
-			 no_dirty_cpu_schedulers_online,
-			 no_dirty_io_schedulers
-			 );
+    erts_init_scheduling(1,
+                         sg_names,
+                         &no_schedulers,
+                         &no_schedulers_online,
+                         &no_dirty_cpu_schedulers,
+                         &no_dirty_cpu_schedulers_online,
+                         &no_dirty_io_schedulers,
+                         erts_no_poll_threads);
     erts_late_init_time_sup();
     erts_init_cpu_topology(); /* Must be after init_scheduling */
     erts_init_gc(); /* Must be after init_scheduling */
@@ -286,7 +290,6 @@ erl_init(int ncpu,
     erts_init_debugger();
     erts_code_ix_init();
     erts_init_fun_table();
-    init_atom_table();
     init_export_table(export_tab_sz);
     erts_record_init_table();
     init_module_table(module_tab_sz);
