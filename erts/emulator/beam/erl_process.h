@@ -2155,6 +2155,8 @@ int erts_sig_prio(Eterm pid, int prio);
 int erts_dbg_check_halloc_lock(Process *p);
 #endif
 void
+erts_scheduling_group_state(Uint, Uint *, Uint *, Uint *, Uint *, Uint *);
+void
 erts_schedulers_state(Uint *, Uint *, Uint *, Uint *, Uint *, Uint *, Uint *, Uint *);
 ErtsSchedSuspendResult
 erts_set_schedulers_online(Process *p,

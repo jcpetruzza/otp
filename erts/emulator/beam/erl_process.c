@@ -236,11 +236,16 @@ typedef struct {
     erts_atomic32_t no_waiting_scheds;
 } ErtsSchedulingGroupData;
 
-static ErtsSchedulingGroupData scheduling_globals;
+typedef union {
+    ErtsSchedulingGroupData esgd;
+    char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(ErtsSchedulingGroupData))];
+} ErtsAlignedSchedulingGroupData;
 
-/* For now all scheduling groups share the same data */
+
+ErtsAlignedSchedulingGroupData * ERTS_WRITE_UNLIKELY(aligned_scheduling_groups_data);
+
 #define SCHEDULING_GROUP_DATA_IX(IX)    \
-  (&scheduling_globals)
+  (&aligned_scheduling_groups_data[(IX)].esgd)
 
 #define SCHEDULING_GROUP_DATA_FOR_RUNQ(RUNQ)    \
   (SCHEDULING_GROUP_DATA_IX((RUNQ)->sched_group_ix))
@@ -309,7 +314,7 @@ static ErtsAlignedAuxWorkData *ERTS_WRITE_UNLIKELY(aligned_aux_work_data);
 #define ERTS_SCHDLR_SSPND_CHNG_ONLN		(((erts_aint32_t) 1) << 2)
 #define ERTS_SCHDLR_SSPND_CHNG_DCPU_ONLN	(((erts_aint32_t) 1) << 3)
 
-static void init_scheduler_suspend(ErtsSchedSuspend *);
+static void init_scheduler_suspend(ErtsSchedSuspend *, int);
 
 static ERTS_INLINE Uint32
 schdlr_sspnd_eq_nscheds(ErtsSchedTypeCounters *val1p, ErtsSchedTypeCounters *val2p)
@@ -4872,6 +4877,8 @@ init_migration_paths(ErtsSchedulingGroupData *sched_group_data)
                                            (mpaths->size
 					    * ERTS_PRE_ALLOCED_MPATHS));
     mpaths->freelist = NULL;
+    mpaths->retired.first = NULL;
+    mpaths->retired.last = NULL;
     for (i = 0; i < ERTS_PRE_ALLOCED_MPATHS-1; i++) {
 	mps = (ErtsMigrationPaths *) p;
         mps->next = mpaths->freelist;
@@ -6216,11 +6223,6 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         erts_alloc_permanent_cache_aligned(
             ERTS_ALC_T_SCHDL_GROUP,
             (n * sizeof(ErtsAlignedSchedulingGroup)));
-    erts_migration_paths =
-        erts_alloc_permanent_cache_aligned(
-            ERTS_ALC_T_SCHDL_GROUP,
-            (n * sizeof(erts_atomic_t))
-        );
 
     {
         ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(0);
@@ -6250,11 +6252,6 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
     erts_atomic32_init_nob(&doing_sys_schedule, 0);
     erts_atomic32_init_nob(&function_calls, 0);
 #endif
-    {
-        ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
-        erts_atomic32_init_nob(&sched_group_data->no_empty_run_queues, 0);
-        erts_atomic32_init_nob(&sched_group_data->no_waiting_scheds, 0);
-    }
 
     erts_no_run_queues = n;
 
@@ -6443,28 +6440,50 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 					   sizeof(ErtsAlignedAuxWorkData)
 					   * (erts_no_dirty_alloc_instances + 1));
 
-    {
-        ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    /* Create and initialize scheduling group data */
+    n = erts_no_scheduling_groups;
+    aligned_scheduling_groups_data =
+        erts_alloc_permanent_cache_aligned(
+            ERTS_ALC_T_SCHDL_GROUP,
+            (n * sizeof(ErtsAlignedSchedulingGroupData)));
+    erts_migration_paths =
+        erts_alloc_permanent_cache_aligned(
+            ERTS_ALC_T_SCHDL_GROUP,
+            (n * sizeof(erts_atomic_t)));
+
+    for(ix = 0; ix < n; ix++) {
+        ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(ix);
+        ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(ix);
         ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
         ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
         ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
-        Uint no_run_queues = ERTS_SCHEDULING_GROUP_IX(0)->no_run_queues;
+        int six;
 
-        sched_group_data->ix = 0;
+        ASSERT(ix == 0);
 
-        if (no_run_queues != 1) {
+        sched_group_data->ix = ix;
+
+        erts_atomic32_init_nob(&sched_group_data->no_empty_run_queues, 0);
+        erts_atomic32_init_nob(&sched_group_data->no_waiting_scheds, 0);
+
+        if (esgp->no_run_queues != 1) {
             sched_group_data->run_queue_info = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
                                                           sizeof(ErtsRunQueueBalance)
-                                                          * no_run_queues);
+                                                          * esgp->no_run_queues);
             sched_group_data->run_queue_compare = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
                                                              sizeof(ErtsRunQueueCompare)
-                                                             * no_run_queues);
+                                                             * esgp->no_run_queues);
+        } else {
+            sched_group_data->run_queue_info = NULL;
+            sched_group_data->run_queue_compare = NULL;
         }
 
         init_no_runqs(balance_info, no_schedulers_online, no_schedulers_online);
-        balance_info->last_active_runqs = no_schedulers;
-        erts_mtx_init(&balance_info->update_mtx, "migration_info_update", NIL,
-            ERTS_LOCK_FLAGS_PROPERTY_STATIC | ERTS_LOCK_FLAGS_CATEGORY_SCHEDULER);
+        balance_info->last_active_runqs = esgp->no_schedulers;
+        erts_mtx_init(&balance_info->update_mtx, "migration_info_update",
+                      make_small(ix),
+                      ERTS_LOCK_FLAGS_PROPERTY_STATIC
+                      | ERTS_LOCK_FLAGS_CATEGORY_SCHEDULER);
         balance_info->forced_check_balance = 0;
         balance_info->halftime = 1;
         balance_info->full_reds_history_index = 0;
@@ -6476,7 +6495,7 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 
         init_migration_paths(sched_group_data);
 
-        init_scheduler_suspend(schdlr_sspnd);
+        init_scheduler_suspend(schdlr_sspnd, ix);
 
         set_schdlr_sspnd_change_flags = 0;
 
@@ -6485,18 +6504,18 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
                                  no_schedulers_online);
         schdlr_sspnd_set_nscheds(&schdlr_sspnd->curr_online,
                                  ERTS_SCHED_NORMAL,
-                                 no_schedulers);
+                                 esgp->no_schedulers);
         schdlr_sspnd_set_nscheds(&schdlr_sspnd->active,
                                  ERTS_SCHED_NORMAL,
-                                 no_schedulers);
+                                 esgp->no_schedulers);
 
-        if (no_schedulers_online != no_schedulers) {
+        if (no_schedulers_online != esgp->no_schedulers) {
             ASSERT(no_schedulers_online < no_schedulers);
             set_schdlr_sspnd_change_flags |= ERTS_SCHDLR_SSPND_CHNG_ONLN;
             schdlr_sspnd->changer = am_init;
             change_no_used_runqs(sched_group_data, no_schedulers_online);
-            for (ix = no_schedulers_online; ix < erts_no_run_queues; ix++)
-                suspend_run_queue(ERTS_RUNQ_IX(ix));
+            for (six = no_schedulers_online; six < esgp->no_run_queues; six++)
+                suspend_run_queue(ERTS_RUNQ_SG_IX(esgp, six));
         }
 
 
@@ -6510,11 +6529,11 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
                                  ERTS_SCHED_DIRTY_CPU,
                                  no_dirty_cpu_schedulers);
 
-        if (no_dirty_cpu_schedulers_online != no_dirty_cpu_schedulers) {
-            ASSERT(no_dirty_cpu_schedulers_online < no_dirty_cpu_schedulers);
+        if (no_dirty_cpu_schedulers_online != esgp->no_dirty_cpu_schedulers) {
+            ASSERT(no_dirty_cpu_schedulers_online < esgp->no_dirty_cpu_schedulers);
             set_schdlr_sspnd_change_flags |= ERTS_SCHDLR_SSPND_CHNG_DCPU_ONLN;
-            for (ix = no_dirty_cpu_schedulers_online; ix < no_dirty_cpu_schedulers; ix++) {
-                ErtsSchedulerData* esdp = ERTS_DIRTY_CPU_SCHEDULER_IX(ix);
+            for (six = no_dirty_cpu_schedulers_online; six < esgp->no_dirty_cpu_schedulers; six++) {
+                ErtsSchedulerData* esdp = ERTS_DIRTY_CPU_SCHEDULER_IX(esgp->first_dirty_cpu_ix + six);
                 erts_atomic32_read_bor_nob(&esdp->ssi->flags, ERTS_SSI_FLG_SUSPENDED);
             }
         }
@@ -7578,10 +7597,12 @@ sched_set_suspended_sleeptype(ErtsSchedulerSleepInfo *ssi,
 }
 
 static void
-init_scheduler_suspend(ErtsSchedSuspend *schdlr_sspnd)
+init_scheduler_suspend(ErtsSchedSuspend *schdlr_sspnd, int sched_group_ix)
 {
-    erts_mtx_init(&schdlr_sspnd->mtx, "schdlr_sspnd", NIL,
-        ERTS_LOCK_FLAGS_PROPERTY_STATIC | ERTS_LOCK_FLAGS_CATEGORY_SCHEDULER);
+    erts_mtx_init(&schdlr_sspnd->mtx, "schdlr_sspnd",
+                  make_small(sched_group_ix),
+                  ERTS_LOCK_FLAGS_PROPERTY_STATIC
+                  | ERTS_LOCK_FLAGS_CATEGORY_SCHEDULER);
     schdlr_sspnd->online.normal = 1;
     schdlr_sspnd->curr_online.normal = 1;
     schdlr_sspnd->active.normal = 1;
@@ -8262,6 +8283,85 @@ suspend_scheduler(ErtsSchedulerData *esdp)
     }
 }
 
+static void
+init_schedulers_state(Uint *online,
+                      Uint *active,
+                      Uint *dirty_cpu_online,
+                      Uint *dirty_cpu_active,
+                      Uint *dirty_io_active)
+{
+    if (online)
+        *online = 0;
+    if (active)
+        *active = 0;
+    if (dirty_cpu_online)
+        *dirty_cpu_online = 0;
+    if (dirty_cpu_active)
+        *dirty_cpu_active = 0;
+    if (dirty_io_active)
+        *dirty_io_active = 0;
+}
+
+static void
+add_schedulers_state(ErtsSchedSuspend *schdlr_sspnd,
+                     Uint *online,
+                     Uint *active,
+                     Uint *dirty_cpu_online,
+                     Uint *dirty_cpu_active,
+                     Uint *dirty_io_active)
+{
+    if (active) {
+        *active += schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
+                                            ERTS_SCHED_NORMAL);
+    }
+    if (online) {
+        *online += schdlr_sspnd_get_nscheds(&schdlr_sspnd->curr_online,
+                                            ERTS_SCHED_NORMAL);
+    }
+    if (dirty_cpu_active) {
+        *dirty_cpu_active +=
+            schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
+                                     ERTS_SCHED_DIRTY_CPU);
+    }
+    if (dirty_cpu_online) {
+        *dirty_cpu_online +=
+            schdlr_sspnd_get_nscheds(&schdlr_sspnd->curr_online,
+                                     ERTS_SCHED_DIRTY_CPU);
+    }
+    if (dirty_io_active) {
+        *dirty_io_active +=
+            schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
+                                     ERTS_SCHED_DIRTY_IO);
+    }
+}
+
+void
+erts_scheduling_group_state(Uint ix,
+                            Uint *online,
+                            Uint *active,
+                            Uint *dirty_cpu_online,
+                            Uint *dirty_cpu_active,
+                            Uint *dirty_io_active)
+{
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(ix);
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
+
+    if (active || online || dirty_cpu_online || dirty_cpu_active
+        || dirty_io_active) {
+        const int lock = !ERTS_IS_CRASH_DUMPING;
+        if (lock) {
+            erts_mtx_lock(&schdlr_sspnd->mtx);
+        }
+        init_schedulers_state(online, active, dirty_cpu_online,
+                              dirty_cpu_active, dirty_io_active);
+        add_schedulers_state(schdlr_sspnd, online, active, dirty_cpu_online,
+                             dirty_cpu_active, dirty_io_active);
+        if (lock) {
+            erts_mtx_unlock(&schdlr_sspnd->mtx);
+        }
+    }
+}
+
 void
 erts_schedulers_state(Uint *total,
 		      Uint *online,
@@ -8272,32 +8372,34 @@ erts_schedulers_state(Uint *total,
 		      Uint *dirty_io,
 		      Uint *dirty_io_active)
 {
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
-    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
+    Uint ix;
 
-    if (active || online || dirty_cpu_online
-	|| dirty_cpu_active || dirty_io_active) {
+    if (active || online || dirty_cpu_online || dirty_cpu_active
+        || dirty_io_active) {
         const int lock = !ERTS_IS_CRASH_DUMPING;
+
         if (lock) {
-            erts_mtx_lock(&schdlr_sspnd->mtx);
+            for (ix = 0; ix < erts_no_scheduling_groups; ix++) {
+                ErtsSchedulingGroupData *sched_group_data =
+                    SCHEDULING_GROUP_DATA_IX(ix);
+                erts_mtx_lock(&sched_group_data->schdlr_sspnd.mtx);
+            }
         }
-	if (active)
-            *active = schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
-					       ERTS_SCHED_NORMAL);
-	if (online)
-            *online = schdlr_sspnd_get_nscheds(&schdlr_sspnd->curr_online,
-					       ERTS_SCHED_NORMAL);
-	if (dirty_cpu_active)
-            *dirty_cpu_active = schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
-							 ERTS_SCHED_DIRTY_CPU);
-	if (dirty_cpu_online)
-            *dirty_cpu_online = schdlr_sspnd_get_nscheds(&schdlr_sspnd->curr_online,
-							 ERTS_SCHED_DIRTY_CPU);
-	if (dirty_io_active)
-            *dirty_io_active = schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
-							ERTS_SCHED_DIRTY_IO);
-        if (lock) {
-            erts_mtx_unlock(&schdlr_sspnd->mtx);
+
+        init_schedulers_state(online, active, dirty_cpu_online,
+                              dirty_cpu_active, dirty_io_active);
+
+        for (ix = 0; ix < erts_no_scheduling_groups; ix++) {
+            ErtsSchedulingGroupData *sched_group_data =
+                SCHEDULING_GROUP_DATA_IX(ix);
+            ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
+
+            add_schedulers_state(schdlr_sspnd, online, active,
+                                 dirty_cpu_online, dirty_cpu_active,
+                                 dirty_io_active);
+            if (lock) {
+                erts_mtx_unlock(&schdlr_sspnd->mtx);
+            }
         }
     }
 
@@ -8383,7 +8485,8 @@ erts_set_schedulers_online(Process *p,
     ErtsProcList *plp;
     int dirty_no, change_dirty, dirty_online;
     Eterm resume_next = NIL;
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    // TODO: FIXME: RECEIVE SCHEDULING GROUP AS PARAMETER
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
     ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
@@ -8638,7 +8741,8 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
     ErtsMultiSchedulingBlock *msbp;
     erts_aint32_t chng_flg;
     int have_blckd_flg;
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    // TODO: FIXME: RECEIVE SCHEDULING GROUP AS PARAMETER
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
     ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
@@ -8828,7 +8932,8 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 int
 erts_is_multi_scheduling_blocked(void)
 {
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    // TODO: FIXME: RECEIVE SCHEDULING GROUP AS PARAMETER
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
     int res;
     erts_mtx_lock(&schdlr_sspnd->mtx);
@@ -8847,7 +8952,8 @@ erts_multi_scheduling_blockers(Process *p, int normal)
 {
     Eterm res = NIL;
     ErtsMultiSchedulingBlock *msbp;
-    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    // TODO: FIXME: RECEIVE SCHEDULING GROUP AS PARAMETER
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     msbp = normal ? &schdlr_sspnd->nmsb : &schdlr_sspnd->msb;
