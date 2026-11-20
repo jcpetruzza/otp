@@ -194,6 +194,8 @@ typedef struct {
     ErtsMigrationPathsAlloc mpaths;
 
     ErtsDirtyCount dirty_count erts_align_attribute(ERTS_CACHE_LINE_SIZE);
+    erts_atomic32_t no_empty_run_queues;
+    erts_atomic32_t no_waiting_scheds;
 } ErtsSchedulingGroupData;
 
 static ErtsSchedulingGroupData scheduling_globals;
@@ -383,8 +385,7 @@ static erts_tsd_key_t ERTS_WRITE_UNLIKELY(sched_data_key);
 static erts_atomic32_t function_calls;
 static erts_atomic32_t doing_sys_schedule;
 #endif
-static erts_atomic32_t no_empty_run_queues;
-static erts_atomic32_t no_waiting_scheds;
+
 long erts_runq_supervision_interval = 0;
 static ethr_event runq_supervision_event;
 static erts_tid_t runq_supervisor_tid;
@@ -2969,10 +2970,11 @@ erts_active_schedulers(void)
 static ERTS_INLINE void
 sched_waiting(Uint no, ErtsRunQueue *rq)
 {
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
     ERTS_LC_ASSERT(erts_lc_runq_is_locked(rq));
     (void) ERTS_RUNQ_FLGS_SET(rq, (ERTS_RUNQ_FLG_OUT_OF_WORK
 				   | ERTS_RUNQ_FLG_HALFTIME_OUT_OF_WORK));
-    erts_atomic32_inc_nob(&no_waiting_scheds);
+    erts_atomic32_inc_nob(&sched_group_data->no_waiting_scheds);
     rq->waiting++;
     rq->woken = 0;
     if (!ERTS_RUNQ_IX_IS_DIRTY(rq->ix) && erts_system_profile_flags.scheduler)
@@ -2982,8 +2984,9 @@ sched_waiting(Uint no, ErtsRunQueue *rq)
 static ERTS_INLINE void
 sched_active(Uint no, ErtsRunQueue *rq)
 {
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
     ERTS_LC_ASSERT(erts_lc_runq_is_locked(rq));
-    erts_atomic32_dec_nob(&no_waiting_scheds);
+    erts_atomic32_dec_nob(&sched_group_data->no_waiting_scheds);
     rq->waiting--;
     if (!ERTS_RUNQ_IX_IS_DIRTY(rq->ix) && erts_system_profile_flags.scheduler)
 	profile_scheduler(make_small(no), am_active);
@@ -2992,19 +2995,21 @@ sched_active(Uint no, ErtsRunQueue *rq)
 static ERTS_INLINE void
 empty_runq_aux(ErtsRunQueue *rq, Uint32 old_flags)
 {
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
     if (!ERTS_RUNQ_IX_IS_DIRTY(rq->ix) && old_flags & ERTS_RUNQ_FLG_NONEMPTY) {
 #ifdef DEBUG
-	erts_aint32_t empty = erts_atomic32_read_nob(&no_empty_run_queues);
+        erts_aint32_t empty = erts_atomic32_read_nob(&sched_group_data->no_empty_run_queues);
+        ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_FOR_RUNQ(rq);
 	/*
 	 * For a short period of time no_empty_run_queues may have
 	 * been increased twice for a specific run queue.
 	 */
-	ASSERT(0 <= empty && empty < 2*erts_no_run_queues);
+        ASSERT(0 <= empty && empty < 2*esgp->no_run_queues);
 #endif
 	if (!erts_runq_supervision_interval)
-	    erts_atomic32_inc_relb(&no_empty_run_queues);
+            erts_atomic32_inc_relb(&sched_group_data->no_empty_run_queues);
 	else {
-	    erts_atomic32_inc_mb(&no_empty_run_queues);
+            erts_atomic32_inc_mb(&sched_group_data->no_empty_run_queues);
 	    if (erts_atomic_read_nob(&runq_supervisor_sleeping))
 		ethr_event_set(&runq_supervision_event);
 	}
@@ -3029,21 +3034,23 @@ empty_runq_get_old_flags(ErtsRunQueue *rq)
 static ERTS_INLINE void
 non_empty_runq(ErtsRunQueue *rq)
 {
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
     Uint32 old_flags = ERTS_RUNQ_FLGS_SET(rq, ERTS_RUNQ_FLG_NONEMPTY);
     if (!ERTS_RUNQ_IX_IS_DIRTY(rq->ix) && (!(old_flags & ERTS_RUNQ_FLG_NONEMPTY))) {
 #ifdef DEBUG
-	erts_aint32_t empty = erts_atomic32_read_nob(&no_empty_run_queues);
+        erts_aint32_t empty = erts_atomic32_read_nob(&sched_group_data->no_empty_run_queues);
+        ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_FOR_RUNQ(rq);
 	/*
 	 * For a short period of time no_empty_run_queues may have
 	 * been increased twice for a specific run queue.
 	 */
-	ASSERT(0 < empty && empty <= 2*erts_no_run_queues);
+        ASSERT(0 < empty && empty <= 2*esgp->no_run_queues);
 #endif
 	if (!erts_runq_supervision_interval)
-	    erts_atomic32_dec_relb(&no_empty_run_queues);
+            erts_atomic32_dec_relb(&sched_group_data->no_empty_run_queues);
 	else {
 	    erts_aint32_t no;
-	    no = erts_atomic32_dec_read_mb(&no_empty_run_queues);
+            no = erts_atomic32_dec_read_mb(&sched_group_data->no_empty_run_queues);
 	    if (no > 0 && erts_atomic_read_nob(&runq_supervisor_sleeping))
 		ethr_event_set(&runq_supervision_event);
 	}
@@ -4698,7 +4705,7 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
     if (active_rqs > blnc_rqs)
         active_rqs = blnc_rqs;
 
-    if (erts_atomic32_read_acqb(&no_empty_run_queues) >= blnc_rqs)
+    if (erts_atomic32_read_acqb(&sched_group_data->no_empty_run_queues) >= blnc_rqs)
         goto end_try_steal_task;
 
     if (rq->ix >= active_rqs)
@@ -4742,7 +4749,7 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
     /* ... and finally re-try stealing from the queues that were skipped because contended.
             We recheck the number of empty runqueues in each iteration, as taking the runqueue lock in check_possible_steal_victim can take quite a while. */
     while (!EQUEUE_ISEMPTY(contended_runqueues)
-            && (erts_atomic32_read_acqb(&no_empty_run_queues) < blnc_rqs)) {
+            && (erts_atomic32_read_acqb(&sched_group_data->no_empty_run_queues) < blnc_rqs)) {
         vix = (int) EQUEUE_GET(contended_runqueues);
         res = check_possible_steal_victim(rq, vix, result_proc, &contended_runqueues);
         if (res) {
@@ -5672,7 +5679,8 @@ wakeup_other_check(ErtsRunQueue *rq, Uint32 flags)
 		    }
 		}
                 else {
-		    if (erts_atomic32_read_nob(&no_waiting_scheds))
+                    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
+                    if (erts_atomic32_read_nob(&sched_group_data->no_waiting_scheds))
 			wake_scheduler_on_empty_runq(rq);
 		    rq->wakeup_other = 0;
 		}
@@ -5732,7 +5740,8 @@ wakeup_other_check_legacy(ErtsRunQueue *rq, Uint32 flags)
 	else if (rq->wakeup_other < wo_params->limit)
 	    rq->wakeup_other += len*wo_reds + ERTS_WAKEUP_OTHER_FIXED_INC_LEGACY;
 	else {
-	    if (erts_atomic32_read_acqb(&no_empty_run_queues) != 0) {
+            ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
+            if (erts_atomic32_read_acqb(&sched_group_data->no_empty_run_queues) != 0) {
 		wake_scheduler_on_empty_runq(rq);
 		rq->wakeup_other = 0;
 	    }
@@ -5786,13 +5795,13 @@ set_wakeup_other_data(void)
 }
 
 static int
-no_runqs_to_supervise(ErtsRunQueuesBalanceInfo *balance_info)
+no_runqs_to_supervise(ErtsSchedulingGroupData *sched_group_data)
 {
     int used;
-    erts_aint32_t nerq = erts_atomic32_read_acqb(&no_empty_run_queues);
+    erts_aint32_t nerq = erts_atomic32_read_acqb(&sched_group_data->no_empty_run_queues);
     if (nerq <= 0)
 	return 0;
-    get_no_runqs(balance_info, NULL, &used);
+    get_no_runqs(&sched_group_data->balance_info, NULL, &used);
     if (nerq >= used)
 	return 0;
     return used;
@@ -5802,17 +5811,16 @@ static void *
 runq_supervisor(void *unused)
 {
     ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
-    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     while (1) {
 	int ix, no_rqs;
 
 	erts_milli_sleep(erts_runq_supervision_interval);
-        no_rqs = no_runqs_to_supervise(balance_info);
+        no_rqs = no_runqs_to_supervise(sched_group_data);
 	if (!no_rqs) {
 	    erts_atomic_set_nob(&runq_supervisor_sleeping, 1);
 	    while (1) {
 		ethr_event_reset(&runq_supervision_event);
-                no_rqs = no_runqs_to_supervise(balance_info);
+                no_rqs = no_runqs_to_supervise(sched_group_data);
 		if (no_rqs) {
 		    erts_atomic_set_nob(&runq_supervisor_sleeping, 0);
 		    break;
@@ -6186,6 +6194,8 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         esgp->first_scheduler_ix = 0;
         esgp->first_dirty_cpu_ix = 0;
         esgp->first_dirty_io_ix = 0;
+
+        esgp->no_run_queues = no_schedulers;
     }
 
     /* Create and initialize run queues */
@@ -6199,8 +6209,11 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
     erts_atomic32_init_nob(&doing_sys_schedule, 0);
     erts_atomic32_init_nob(&function_calls, 0);
 #endif
-    erts_atomic32_init_nob(&no_empty_run_queues, 0);
-    erts_atomic32_init_nob(&no_waiting_scheds, 0);
+    {
+        ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+        erts_atomic32_init_nob(&sched_group_data->no_empty_run_queues, 0);
+        erts_atomic32_init_nob(&sched_group_data->no_waiting_scheds, 0);
+    }
 
     erts_no_run_queues = n;
 
