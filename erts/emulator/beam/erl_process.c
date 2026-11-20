@@ -592,13 +592,21 @@ ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(proclist,
     (ASSERT(0 <= ((int) (IX))					        \
 	    && ((int) (IX)) < ((int) erts_no_dirty_io_schedulers)),	\
      &aligned_dirty_io_sched_sleep_info[(IX)].ssi)
-
-#define ERTS_FOREACH_RUNQ(RQVAR, DO)					\
+#define ERTS_SCHED_SLEEP_INFO_SG_IX(SG, IX)                             \
+    (ASSERT(0 <= (IX) && (IX) < (SG)->no_schedulers),                   \
+     ERTS_SCHED_SLEEP_INFO_IX((SG)->first_scheduler_ix + (IX)))
+#define ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(SG, IX)                   \
+    (ASSERT(0 <= (IX) && (IX) < (SG)->no_dirty_cpu_schedulers),         \
+     ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX((SG)->first_dirty_cpu_ix + (IX)))
+#define ERTS_DIRTY_IO_SCHED_SLEEP_INFO_SG_IX(SG, IX)                    \
+    (ASSERT(0 <= (IX) && (IX) < (SG)->no_dirty_io_schedulers),          \
+     ERTS_DIRTY_IO_SCHED_SLEEP_INFO_IX((SG)->first_dirty_io_ix + (IX)))
+#define ERTS_FOREACH_SCHEDULING_GROUP_RUNQ(SG, RQVAR, DO)               \
 do {									\
     ErtsRunQueue *RQVAR;						\
     int ix__;								\
-    for (ix__ = 0; ix__ < erts_no_run_queues; ix__++) {			\
-	RQVAR = ERTS_RUNQ_IX(ix__);					\
+    for (ix__ = 0; ix__ < (SG)->no_run_queues; ix__++) {                        \
+        RQVAR = ERTS_RUNQ_SG_IX(SG, ix__);                                      \
 	erts_runq_lock(RQVAR);					\
 	{ DO; }								\
 	erts_runq_unlock(RQVAR);					\
@@ -3777,32 +3785,32 @@ ssi_wake(ErtsSchedulerSleepInfo *ssi)
 
 
 static void
-dcpu_sched_ix_suspend_wake(Uint ix)
+dcpu_sched_sg_ix_suspend_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    ErtsSchedulerSleepInfo* ssi = ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix);
+    ErtsSchedulerSleepInfo* ssi = ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(esgp, ix);
     erts_atomic32_read_bor_nob(&ssi->flags, ERTS_SSI_FLG_SUSPENDED);
     ssi_wake(ssi);
 }
 
 static void
-dio_sched_ix_suspend_wake(Uint ix)
+dio_sched_sg_ix_suspend_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    ErtsSchedulerSleepInfo* ssi = ERTS_DIRTY_IO_SCHED_SLEEP_INFO_IX(ix);
+    ErtsSchedulerSleepInfo* ssi = ERTS_DIRTY_IO_SCHED_SLEEP_INFO_SG_IX(esgp, ix);
     erts_atomic32_read_bor_nob(&ssi->flags, ERTS_SSI_FLG_SUSPENDED);
     ssi_wake(ssi);
 }
 
 static void
-dcpu_sched_ix_wake(Uint ix)
+dcpu_sched_sg_ix_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    ssi_wake(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix));
+    ssi_wake(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 }
 
 #if 0
 static void
-dio_sched_ix_wake(Uint ix)
+dio_sched_sg_ix_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    ssi_wake(ERTS_DIRTY_IO_SCHED_SLEEP_INFO_IX(ix));
+    ssi_wake(ERTS_DIRTY_IO_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 }
 #endif
 
@@ -3944,9 +3952,9 @@ chk_wake_sched(ErtsRunQueue *crq, int ix, int activate)
     ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     Uint32 flags;
     ErtsRunQueue *wrq;
-    if (crq->ix == ix)
+    if (ERTS_SG_IX_RUNQ(crq) == ix)
 	return 0;
-    wrq = ERTS_RUNQ_IX(ix);
+    wrq = ERTS_RUNQ_SG_IX(ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix), ix);
     flags = ERTS_RUNQ_FLGS_GET(wrq);
     if (activate && !(flags & ERTS_RUNQ_FLG_SUSPENDED)) {
         if (try_inc_no_active_runqs(balance_info, ix+1))
@@ -3962,7 +3970,7 @@ chk_wake_sched(ErtsRunQueue *crq, int ix, int activate)
 static void
 wake_scheduler_on_empty_runq(ErtsRunQueue *crq)
 {
-    int ix = crq->ix;
+    int ix = ERTS_SG_IX_RUNQ(crq);
     int stop_ix = ix;
     int active_ix, balance_ix;
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(crq);
@@ -4401,7 +4409,7 @@ evacuate_run_queue(ErtsRunQueue *rq,
     ASSERT(!ERTS_RUNQ_IX_IS_DIRTY(rq->ix));
 
     mps = erts_get_migration_paths_managed(rq->sched_group_ix);
-    mp = &mps->mpath[rq->ix];
+    mp = &mps->mpath[ERTS_SG_IX_RUNQ(rq)];
 
     /* Evacuate scheduled misc ops */
 
@@ -4708,7 +4716,8 @@ no_procs:
 static ERTS_INLINE int
 check_possible_steal_victim(ErtsRunQueue *rq, int vix, Process **result_proc, ErtsEQueue* contended_runqueues)
 {
-    ErtsRunQueue *vrq = ERTS_RUNQ_IX(vix);
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_FOR_RUNQ(rq);
+    ErtsRunQueue *vrq = ERTS_RUNQ_SG_IX(esgp, vix);
     Uint32 flags = ERTS_RUNQ_FLGS_GET(vrq);
 
     if (!runq_got_work_to_execute_flags(flags))
@@ -4728,6 +4737,7 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
     int res, vix, active_rqs, blnc_rqs;
     Uint32 flags;
     DECLARE_EQUEUE(contended_runqueues);
+    int rq_ix = ERTS_SG_IX_RUNQ(rq);
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
     ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
 
@@ -4746,13 +4756,13 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
     if (erts_atomic32_read_acqb(&sched_group_data->no_empty_run_queues) >= blnc_rqs)
         goto end_try_steal_task;
 
-    if (rq->ix >= active_rqs)
+    if (rq_ix >= active_rqs)
         goto end_try_steal_task;
 
     /* First try to steal from an inactive run queue... */
     if (active_rqs < blnc_rqs) {
         int no = blnc_rqs - active_rqs;
-        int stop_ix = vix = active_rqs + rq->ix % no;
+        int stop_ix = vix = active_rqs + rq_ix % no;
         while (1) {
             res = check_possible_steal_victim(rq, vix, result_proc, &contended_runqueues);
             if (res) {
@@ -4767,14 +4777,14 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
         }
     }
 
-    vix = rq->ix;
+    vix = rq_ix;
 
     /* ... then try to steal a job from another active queue... */
     while (1) {
         vix++;
         if (vix >= active_rqs)
             vix = 0;
-        if (vix == rq->ix)
+        if (vix == rq_ix)
             break;
 
         res = check_possible_steal_victim(rq, vix, result_proc, &contended_runqueues);
@@ -4848,13 +4858,14 @@ erts_atomic_t *erts_migration_paths;
 static void
 init_migration_paths(ErtsSchedulingGroupData *sched_group_data)
 {
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
     int qix, i;
     char *p;
     ErtsMigrationPaths *mps;
 
     mpaths->size = sizeof(ErtsMigrationPaths);
-    mpaths->size += sizeof(ErtsMigrationPath)*(erts_no_schedulers-1);
+    mpaths->size += sizeof(ErtsMigrationPath)*(esgp->no_run_queues-1);
     mpaths->size = ERTS_ALC_CACHE_LINE_ALIGN_SIZE(mpaths->size);
 
     p = erts_alloc_permanent_cache_aligned(ERTS_ALC_T_LL_MPATHS,
@@ -4870,7 +4881,7 @@ init_migration_paths(ErtsSchedulingGroupData *sched_group_data)
 
     mps = (ErtsMigrationPaths *) p;
     mps->block = NULL;
-    for (qix = 0; qix < erts_no_run_queues; qix++) {
+    for (qix = 0; qix < esgp->no_run_queues; qix++) {
 	int pix;
 	mps->mpath[qix].flags = 0;
 	mps->mpath[qix].misc_evac_runq = NULL;
@@ -4953,6 +4964,7 @@ check_balance(ErtsRunQueue *c_rq)
 #  error check_balance() assumes ERTS_MAX_PROCESS < (1 << 27)
 #endif
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(c_rq);
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     ErtsRunQueueBalance *run_queue_info = sched_group_data->run_queue_info;
@@ -4982,7 +4994,7 @@ check_balance(ErtsRunQueue *c_rq)
     if (balance_info->halftime) {
         balance_info->halftime = 0;
         erts_atomic32_set_nob(&balance_info->checking_balance, 0);
-	ERTS_FOREACH_RUNQ(rq,
+        ERTS_FOREACH_SCHEDULING_GROUP_RUNQ(esgp, rq,
 	{
 	    if (rq->waiting)
 		(void) ERTS_RUNQ_FLGS_SET(rq, ERTS_RUNQ_FLG_HALFTIME_OUT_OF_WORK);
@@ -5030,7 +5042,7 @@ check_balance(ErtsRunQueue *c_rq)
 
     /* Read balance information for all run queues */
     for (qix = 0; qix < blnc_no_rqs; qix++) {
-	ErtsRunQueue *rq = ERTS_RUNQ_IX(qix);
+        ErtsRunQueue *rq = ERTS_RUNQ_SG_IX(esgp, qix);
 	erts_runq_lock(rq);
 
 	run_queue_info[qix].flags = ERTS_RUNQ_FLGS_GET_NOB(rq);
@@ -5449,7 +5461,7 @@ erts_fprintf(stderr, "--------------------------------\n");
 		    = run_queue_info[qix].prio[pix].migration_limit;
 		mp->prio[pix].limit.other
 		    = run_queue_info[mqix].prio[pix].migration_limit;
-		mp->prio[pix].runq = ERTS_RUNQ_IX(mqix);
+                mp->prio[pix].runq = ERTS_RUNQ_SG_IX(esgp, mqix);
 		mp->prio[pix].flags = run_queue_info[mqix].flags;
 	    }
 	    else {
@@ -5462,7 +5474,7 @@ erts_fprintf(stderr, "--------------------------------\n");
 		    = run_queue_info[qix].prio[pix].migration_limit;
 		mp->prio[pix].limit.other
 		    = run_queue_info[mqix].prio[pix].migration_limit;
-		mp->prio[pix].runq = ERTS_RUNQ_IX(mqix);
+                mp->prio[pix].runq = ERTS_RUNQ_SG_IX(esgp, mqix);
 		mp->prio[pix].flags = run_queue_info[mqix].flags;
 	    }
 	}
@@ -5471,7 +5483,7 @@ erts_fprintf(stderr, "--------------------------------\n");
     old_mpaths = erts_get_migration_paths_managed(sched_group_data->ix);
 
     /* Keep offline run-queues as is */
-    for (qix = blnc_no_rqs; qix < erts_no_schedulers; qix++) {
+    for (qix = blnc_no_rqs; qix < esgp->no_run_queues; qix++) {
 	ErtsMigrationPath *nmp = &new_mpaths->mpath[qix];
 	ErtsMigrationPath *omp = &old_mpaths->mpath[qix];
 
@@ -5494,7 +5506,7 @@ erts_fprintf(stderr, "--------------------------------\n");
     /* Reset balance statistics in all online queues */
     for (qix = 0; qix < blnc_no_rqs; qix++) {
 	Uint32 flags = run_queue_info[qix].flags;
-	ErtsRunQueue *rq = ERTS_RUNQ_IX(qix);
+        ErtsRunQueue *rq = ERTS_RUNQ_SG_IX(esgp, qix);
 
 	erts_runq_lock(rq);
 	ASSERT(!(flags & ERTS_RUNQ_FLG_OUT_OF_WORK));
@@ -5536,6 +5548,7 @@ erts_fprintf(stderr, "--------------------------------\n");
 static void
 change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
 {
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     int qix;
@@ -5563,9 +5576,9 @@ change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
 	    nmp->prio[pix].flags = 0;
 	}
     }
-    for (qix = used; qix < erts_no_run_queues; qix++) {
+    for (qix = used; qix < esgp->no_run_queues; qix++) {
 	int pix;
-	ErtsRunQueue *to_rq = ERTS_RUNQ_IX(qix % used);
+        ErtsRunQueue *to_rq = ERTS_RUNQ_SG_IX(esgp, qix % used);
 	ErtsMigrationPath *nmp = &new_mpaths->mpath[qix];
 
 	nmp->flags = (ERTS_RUNQ_FLGS_EMIGRATE_QMASK
@@ -5590,9 +5603,12 @@ change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
 
     erts_mtx_unlock(&balance_info->update_mtx);
 
-    erts_runq_lock(ERTS_RUNQ_IX(0));
-    ERTS_RUNQ_IX(0)->check_balance_reds = 0;
-    erts_runq_unlock(ERTS_RUNQ_IX(0));
+    {
+        ErtsRunQueue *first_rq = ERTS_RUNQ_SG_IX(esgp, 0);
+        erts_runq_lock(first_rq);
+        first_rq->check_balance_reds = 0;
+        erts_runq_unlock(first_rq);
+    }
 }
 
 
@@ -5829,6 +5845,8 @@ runq_supervisor(void *vesgdp)
 {
     ErtsSchedulingGroupData *sched_group_data = (ErtsSchedulingGroupData*)vesgdp;
     ErtsRunQueueSupervision *runq_supervision = &sched_group_data->runq_supervision;
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
+
     while (1) {
 	int ix, no_rqs;
 
@@ -5848,7 +5866,7 @@ runq_supervisor(void *vesgdp)
 	}
 
 	for (ix = 0; ix < no_rqs; ix++) {
-	    ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
+            ErtsRunQueue *rq = ERTS_RUNQ_SG_IX(esgp, ix);
 	    if (ERTS_RUNQ_FLGS_GET(rq) & ERTS_RUNQ_FLG_NONEMPTY) {
 		erts_runq_lock(rq);
 		if (erts_atomic32_read_dirty(&rq->len) != 0)
@@ -7469,15 +7487,15 @@ nrml_sched_ix_resume_wake(Uint ix)
 
 
 static void
-dcpu_sched_ix_resume_wake(Uint ix)
+dcpu_sched_sg_ix_resume_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    sched_resume_wake__(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix));
+    sched_resume_wake__(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 }
 
 static void
-dio_sched_ix_resume_wake(Uint ix)
+dio_sched_sg_ix_resume_wake(ErtsSchedulingGroup *esgp, Uint ix)
 {
-    sched_resume_wake__(ERTS_DIRTY_IO_SCHED_SLEEP_INFO_IX(ix));
+    sched_resume_wake__(ERTS_DIRTY_IO_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 }
 
 
@@ -7674,7 +7692,7 @@ msb_runq_prio_bit(Uint32 flgs)
 static ERTS_INLINE void
 msb_runq_prio_bits(const ErtsSchedulingGroup *esgp, Uint32 *nrmlp, Uint32 *dcpup, Uint32 *diop)
 {
-    Uint32 flgs = ERTS_RUNQ_FLGS_GET(ERTS_RUNQ_IX(0));
+    Uint32 flgs = ERTS_RUNQ_FLGS_GET(ERTS_RUNQ_SG_IX(esgp, 0));
     if (flgs & ERTS_RUNQ_FLG_HALTING) {
         /*
          * Emulator is halting; only execute port jobs
@@ -7813,7 +7831,7 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
              * to sleep we trick it into believing
              * it has work to do...
              */
-            ERTS_RUNQ_FLGS_SET_NOB(ERTS_RUNQ_IX(0),
+            ERTS_RUNQ_FLGS_SET_NOB(ERTS_RUNQ_SG_IX(esgp, 0),
                                    ERTS_RUNQ_FLG_MISC_OP);
         }
     }
@@ -7831,7 +7849,7 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
 
     switch (exec_type) {
     case ERTS_SCHED_NORMAL:
-        exec_rq = ERTS_RUNQ_IX(0);
+        exec_rq = ERTS_RUNQ_SG_IX(esgp, 0);
         break;
     case ERTS_SCHED_DIRTY_CPU:
         exec_rq = ERTS_DIRTY_CPU_RUNQ(esgp);
@@ -7921,6 +7939,7 @@ suspend_scheduler(ErtsSchedulerData *esdp)
     ErtsSchedType sched_type;
     erts_aint32_t online_flag;
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp);
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     /*
@@ -7939,15 +7958,15 @@ suspend_scheduler(ErtsSchedulerData *esdp)
     switch (sched_type) {
     case ERTS_SCHED_NORMAL:
         online_flag = ERTS_SCHDLR_SSPND_CHNG_ONLN;
-        no = esdp->no;
+        no = esdp->no - esgp->first_scheduler_ix;
         break;
     case ERTS_SCHED_DIRTY_CPU:
         online_flag = ERTS_SCHDLR_SSPND_CHNG_DCPU_ONLN;
-        no = esdp->dirty_no;
+        no = esdp->dirty_no - esgp->first_dirty_cpu_ix;
         break;
     case ERTS_SCHED_DIRTY_IO:
         online_flag = 0;
-	no = esdp->dirty_no;
+        no = esdp->dirty_no - esgp->first_dirty_io_ix;
         break;
     default:
         ERTS_INTERNAL_ERROR("Invalid scheduler type");
@@ -8018,6 +8037,8 @@ suspend_scheduler(ErtsSchedulerData *esdp)
                         }
 		    }
 		    else {
+                        ErtsRunQueue *first_queue = ERTS_RUNQ_SG_IX(esgp, 0);
+
                         ASSERT(msb[i] == &schdlr_sspnd->msb);
                         if (schdlr_sspnd_get_nscheds(&schdlr_sspnd->active,
                                                      ERTS_SCHED_NORMAL) == 1
@@ -8029,8 +8050,8 @@ suspend_scheduler(ErtsSchedulerData *esdp)
                             clr_flg = ERTS_SCHDLR_SSPND_CHNG_MSB;
 
                             /* Begin switching between scheduler types executing... */
-                            ERTS_RUNQ_FLGS_SET_NOB(ERTS_RUNQ_IX(0), ERTS_RUNQ_FLG_MSB_EXEC);
-                            erts_atomic32_read_bor_nob(&ERTS_RUNQ_IX(0)->scheduler->ssi->flags,
+                            ERTS_RUNQ_FLGS_SET_NOB(first_queue, ERTS_RUNQ_FLG_MSB_EXEC);
+                            erts_atomic32_read_bor_nob(&first_queue->scheduler->ssi->flags,
                                                        ERTS_SSI_FLG_MSB_EXEC);
                         }
 		    }
@@ -8363,13 +8384,14 @@ erts_set_schedulers_online(Process *p,
     int dirty_no, change_dirty, dirty_online;
     Eterm resume_next = NIL;
     ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     if (new_no < 1)
 	return ERTS_SCHDLR_SSPND_EINVAL;
-    else if (dirty_only && erts_no_dirty_cpu_schedulers < new_no)
+    else if (dirty_only && esgp->no_dirty_cpu_schedulers < new_no)
 	return ERTS_SCHDLR_SSPND_EINVAL;
-    else if (erts_no_schedulers < new_no)
+    else if (esgp->no_schedulers < new_no)
 	return ERTS_SCHDLR_SSPND_EINVAL;
 
     if (dirty_only)
@@ -8427,7 +8449,7 @@ erts_set_schedulers_online(Process *p,
     if (dirty_only)
 	*old_no = dirty_online;
 
-    ASSERT(dirty_online <= erts_no_dirty_cpu_schedulers);
+    ASSERT(dirty_online <= esgp->no_dirty_cpu_schedulers);
 
     if (dirty_only) {
 	if (no > online) {
@@ -8445,12 +8467,12 @@ erts_set_schedulers_online(Process *p,
 	 * Adjust the number of dirty CPU schedulers online relative to the
 	 * adjustment made to the number of normal schedulers online.
 	 */
-	int total_pct = erts_no_dirty_cpu_schedulers*100/erts_no_schedulers;
+        int total_pct = esgp->no_dirty_cpu_schedulers*100/esgp->no_schedulers;
 	int onln_pct = no*total_pct/online;
 	dirty_no = dirty_online*onln_pct/100;
 	if (dirty_no == 0)
 	    dirty_no = 1;
-	ASSERT(dirty_no <= erts_no_dirty_cpu_schedulers);
+        ASSERT(dirty_no <= esgp->no_dirty_cpu_schedulers);
 
 	if (no != online)
 	    change_dirty = (dirty_no != dirty_online);
@@ -8489,18 +8511,18 @@ erts_set_schedulers_online(Process *p,
 	    ErtsSchedulerSleepInfo* ssi;
             if (schdlr_sspnd->msb.ongoing) {
 		for (ix = dirty_online; ix < dirty_no; ix++) {
-		    ssi = ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix);
+                    ssi = ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(esgp, ix);
 		    erts_sched_poke(ssi);
 		}
 	    } else {
 		for (ix = dirty_online; ix < dirty_no; ix++)
-		    dcpu_sched_ix_resume_wake(ix);
+                    dcpu_sched_sg_ix_resume_wake(esgp, ix);
 	    }
 	}
 	if (!dirty_only) {
             if (schdlr_sspnd->msb.ongoing|schdlr_sspnd->nmsb.ongoing) {
 		for (ix = online; ix < no; ix++)
-		    erts_sched_poke(ERTS_SCHED_SLEEP_INFO_IX(ix));
+                    erts_sched_poke(ERTS_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 	    }
 	    else {
 		if (plocks) {
@@ -8510,10 +8532,10 @@ erts_set_schedulers_online(Process *p,
                 change_no_used_runqs(sched_group_data, no);
 
 		for (ix = online; ix < no; ix++)
-		    resume_run_queue(ERTS_RUNQ_IX(ix));
+                    resume_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 
-		for (ix = no; ix < erts_no_run_queues; ix++)
-		    suspend_run_queue(ERTS_RUNQ_IX(ix));
+                for (ix = no; ix < esgp->no_run_queues; ix++)
+                    suspend_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 	    }
 	}
     }
@@ -8521,23 +8543,23 @@ erts_set_schedulers_online(Process *p,
 	if (change_dirty) {
             if (schdlr_sspnd->msb.ongoing) {
 		for (ix = dirty_no; ix < dirty_online; ix++)
-		    erts_sched_poke(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix));
+                    erts_sched_poke(ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 	    }
             else {
 		for (ix = dirty_no; ix < dirty_online; ix++)
-                    dcpu_sched_ix_suspend_wake(ix);
+                    dcpu_sched_sg_ix_suspend_wake(esgp, ix);
                 /*
                  * Newly suspended scheduler may have just been
                  * about to handle a task. Make sure someone takes
                  * care of such a task...
                  */
-                dcpu_sched_ix_wake(0);
+                dcpu_sched_sg_ix_wake(esgp, 0);
 	    }
 	}
 	if (!dirty_only) {
             if (schdlr_sspnd->msb.ongoing|schdlr_sspnd->nmsb.ongoing) {
 		for (ix = no; ix < online; ix++)
-		    erts_sched_poke(ERTS_SCHED_SLEEP_INFO_IX(ix));
+                    erts_sched_poke(ERTS_SCHED_SLEEP_INFO_SG_IX(esgp, ix));
 	    }
 	    else {
 		if (plocks) {
@@ -8546,11 +8568,11 @@ erts_set_schedulers_online(Process *p,
 		}
 
                 change_no_used_runqs(sched_group_data, no);
-		for (ix = no; ix < erts_no_run_queues; ix++)
-		    suspend_run_queue(ERTS_RUNQ_IX(ix));
+                for (ix = no; ix < esgp->no_run_queues; ix++)
+                    suspend_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 
 		for (ix = no; ix < online; ix++) {
-		    ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
+                    ErtsRunQueue *rq = ERTS_RUNQ_SG_IX(esgp, ix);
 		    wake_scheduler(rq);
 		}
 	    }
@@ -8617,6 +8639,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
     erts_aint32_t chng_flg;
     int have_blckd_flg;
     ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(sched_group_data->ix);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     if (normal) {
@@ -8655,7 +8678,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 	    p->flags |= have_blckd_flg;
 	    goto wait_until_msb;
 	}
-	else if (msbp->blckrs || (normal && erts_no_schedulers == 1)) {
+        else if (msbp->blckrs || (normal && esgp->no_schedulers == 1)) {
 	    ASSERT(!msbp->blckrs || msbp->ongoing);
 	    msbp->ongoing = 1;
 	    plp = proclist_create(p);
@@ -8686,19 +8709,19 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
             erts_atomic32_read_bor_nob(&schdlr_sspnd->changing,
                                            chng_flg);
             change_no_used_runqs(sched_group_data, 1);
-            for (ix = 1; ix < erts_no_run_queues; ix++)
-                suspend_run_queue(ERTS_RUNQ_IX(ix));
+            for (ix = 1; ix < esgp->no_run_queues; ix++)
+                suspend_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 
             for (ix = 1; ix < online; ix++) {
-                ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
+                ErtsRunQueue *rq = ERTS_RUNQ_SG_IX(esgp, ix);
                 wake_scheduler(rq);
             }
 
             if (!normal) {
-                for (ix = 0; ix < erts_no_dirty_cpu_schedulers; ix++)
-                    dcpu_sched_ix_suspend_wake(ix);
-                for (ix = 0; ix < erts_no_dirty_io_schedulers; ix++)
-                    dio_sched_ix_suspend_wake(ix);
+                for (ix = 0; ix < esgp->no_dirty_cpu_schedulers; ix++)
+                    dcpu_sched_sg_ix_suspend_wake(esgp, ix);
+                for (ix = 0; ix < esgp->no_dirty_io_schedulers; ix++)
+                    dio_sched_sg_ix_suspend_wake(esgp, ix);
             }
 
         wait_until_msb:
@@ -8760,20 +8783,20 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 
 		/* Resume all online run queues */
 		for (ix = 1; ix < online; ix++)
-		    resume_run_queue(ERTS_RUNQ_IX(ix));
+                    resume_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 
-		for (ix = online; ix < erts_no_run_queues; ix++)
-		    suspend_run_queue(ERTS_RUNQ_IX(ix));
+                for (ix = online; ix < esgp->no_run_queues; ix++)
+                    suspend_run_queue(ERTS_RUNQ_SG_IX(esgp, ix));
 	    }
             if (!schdlr_sspnd->msb.ongoing) {
                 /* Get rid of msb-exec flag in run-queue of scheduler 1 */
-                resume_run_queue(ERTS_RUNQ_IX(0));
+                resume_run_queue(ERTS_RUNQ_SG_IX(esgp, 0));
                 online = (int) schdlr_sspnd_get_nscheds(&schdlr_sspnd->online,
 							ERTS_SCHED_DIRTY_CPU);
 		for (ix = 0; ix < online; ix++)
-		    dcpu_sched_ix_resume_wake(ix);
-		for (ix = 0; ix < erts_no_dirty_io_schedulers; ix++)
-		    dio_sched_ix_resume_wake(ix);
+                    dcpu_sched_sg_ix_resume_wake(esgp, ix);
+                for (ix = 0; ix < esgp->no_dirty_io_schedulers; ix++)
+                    dio_sched_sg_ix_resume_wake(esgp, ix);
 	    }
 	}
 
@@ -9953,7 +9976,7 @@ Process *erts_schedule(ErtsSchedulerData *esdp, Process *p, int calls)
 	    ERTS_LC_ASSERT(!erts_thr_progress_is_blocking());
 
             mps = erts_get_migration_paths_managed(SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp)->ix);
-	    mp = &mps->mpath[rq->ix];
+            mp = &mps->mpath[ERTS_SG_IX_RUNQ(rq)];
 
 	    if (mp->flags & ERTS_RUNQ_FLGS_IMMIGRATE_QMASK)
 		immigrate(rq, mp);
@@ -12164,7 +12187,7 @@ erts_schedule_misc_op(void (*func)(void *), void *arg)
     if (!mpaths)
 	rq = ERTS_RUNQ_IX(0);
     else {
-	ErtsRunQueue *erq = mpaths->mpath[rq->ix].misc_evac_runq;
+        ErtsRunQueue *erq = mpaths->mpath[ERTS_SG_IX_RUNQ(rq)].misc_evac_runq;
 	if (erq)
 	    rq = erq;
     }

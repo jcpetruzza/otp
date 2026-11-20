@@ -1915,6 +1915,21 @@ extern int erts_system_profile_ts_type;
   (ERTS_RUNQ_IX(erts_no_run_queues + ERTS_NUM_DIRTY_CPU_RUNQS + (SG)->ix))
 #define ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(RQ) (ERTS_RUNQ_IX_IS_DIRTY_CPU((RQ)->ix))
 #define ERTS_RUNQ_IS_DIRTY_IO_RUNQ(RQ) (ERTS_RUNQ_IX_IS_DIRTY_IO((RQ)->ix))
+#define ERTS_RUNQ_SG_IX(SG, IX)                                         \
+  (ASSERT(0 <= (IX) &&                                                  \
+         (IX) < (SG)->no_run_queues + ERTS_NUM_DIRTY_RUNQS_PER_GROUP),  \
+   ((IX) < (SG)->no_run_queues)                                         \
+    ? ERTS_RUNQ_IX((IX)+(SG)->first_scheduler_ix)                       \
+    : (((IX) == (SG)->no_run_queues)                                    \
+       ? ERTS_DIRTY_CPU_RUNQ(SG)                                        \
+       :ERTS_DIRTY_IO_RUNQ(SG)))
+#define ERTS_SG_IX_RUNQ(RQ)                                             \
+  (ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(RQ)                                      \
+    ? ERTS_SCHEDULING_GROUP_FOR_RUNQ(RQ)->no_run_queues                 \
+    : (ERTS_RUNQ_IS_DIRTY_IO_RUNQ(RQ)                                   \
+       ? ERTS_SCHEDULING_GROUP_FOR_RUNQ(RQ)->no_run_queues              \
+         + ERTS_NUM_DIRTY_CPU_RUNQS_PER_GROUP                           \
+       : (RQ)->ix - ERTS_SCHEDULING_GROUP_FOR_RUNQ(RQ)->first_scheduler_ix))
 #define ERTS_SCHEDULER_IX(IX)						\
   (ASSERT(0 <= (IX) && (IX) < erts_no_schedulers),			\
    &erts_aligned_scheduler_data[(IX)].esd)
@@ -2541,7 +2556,7 @@ erts_check_emigration_need(ErtsRunQueue *c_rq, int prio)
     if (!mps)
 	return NULL;
 
-    mp = &mps->mpath[c_rq->ix];
+    mp = &mps->mpath[ERTS_SG_IX_RUNQ(c_rq)];
     flags = mp->flags;
 
     if (ERTS_CHK_RUNQ_FLG_EMIGRATE(flags, prio)) {
