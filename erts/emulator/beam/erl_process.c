@@ -127,6 +127,78 @@ runq_got_work_to_execute(ErtsRunQueue *rq)
     return runq_got_work_to_execute_flags(ERTS_RUNQ_FLGS_GET_NOB(rq));
 }
 
+typedef struct ErtsMultiSchedulingBlock_ {
+    int ongoing;
+    ErtsProcList *blckrs;
+    ErtsProcList *chngq;
+} ErtsMultiSchedulingBlock;
+
+typedef struct ErtsSchedTypeCounters_ {
+    Uint32 normal;
+    Uint32 dirty_cpu;
+    Uint32 dirty_io;
+} ErtsSchedTypeCounters;
+
+typedef struct ErtsSchedSuspend_ {
+    erts_mtx_t mtx;
+    ErtsSchedTypeCounters online;
+    ErtsSchedTypeCounters curr_online;
+    ErtsSchedTypeCounters active;
+    erts_atomic32_t changing;
+    ErtsProcList *chngq;
+    Eterm changer;
+    ErtsMultiSchedulingBlock nmsb; /* Normal multi Scheduling Block */
+    ErtsMultiSchedulingBlock msb; /* Multi Scheduling Block */
+    ErtsSchedType last_msb_dirty_type;
+} ErtsSchedSuspend;
+
+typedef struct {
+    erts_mtx_t update_mtx;
+    erts_atomic32_t no_runqs;
+    int last_active_runqs;
+    int forced_check_balance;
+    erts_atomic32_t checking_balance;
+    int halftime;
+    int full_reds_history_index;
+    struct {
+        int active_runqs;
+        int reds;
+        erts_aint32_t max_len;
+    } prev_rise;
+    Uint n;
+} ErtsRunQueuesBalanceInfo;
+
+typedef struct {
+    size_t size;
+    ErtsMigrationPaths *freelist;
+    struct {
+        ErtsMigrationPaths *first;
+        ErtsMigrationPaths *last;
+    } retired;
+} ErtsMigrationPathsAlloc;
+
+typedef struct {
+    ErtsSchedSuspend schdlr_sspnd;
+    ErtsRunQueuesBalanceInfo balance_info;
+    ErtsMigrationPathsAlloc mpaths;
+} ErtsSchedulingGroupData;
+
+static ErtsSchedulingGroupData scheduling_globals;
+
+/* For now all scheduling groups share the same data */
+#define SCHEDULING_GROUP_DATA_IX(IX)    \
+  (&scheduling_globals)
+
+#define SCHEDULING_GROUP_DATA_FOR_RUNQ(RUNQ)    \
+  (&scheduling_globals)
+
+#define SCHEDULING_GROUP_DATA_FOR_SCHEDULER(S)  \
+  (&scheduling_globals)
+
+/* For now all processes are in the default group */
+#define SCHEDULING_GROUP_DATA_FOR_PROC(P)       \
+  (&scheduling_globals)
+
 const Process erts_invalid_process = {{ERTS_INVALID_PID}};
 
 int ERTS_WRITE_UNLIKELY(erts_default_spo_flags) = SPO_ON_HEAP_MSGQ;
@@ -182,33 +254,6 @@ static ErtsAlignedAuxWorkData *ERTS_WRITE_UNLIKELY(aligned_aux_work_data);
 #define ERTS_SCHDLR_SSPND_CHNG_MSB		(((erts_aint32_t) 1) << 1)
 #define ERTS_SCHDLR_SSPND_CHNG_ONLN		(((erts_aint32_t) 1) << 2)
 #define ERTS_SCHDLR_SSPND_CHNG_DCPU_ONLN	(((erts_aint32_t) 1) << 3)
-
-typedef struct ErtsMultiSchedulingBlock_ {
-    int ongoing;
-    ErtsProcList *blckrs;
-    ErtsProcList *chngq;
-} ErtsMultiSchedulingBlock;
-
-typedef struct ErtsSchedTypeCounters_ {
-    Uint32 normal;
-    Uint32 dirty_cpu;
-    Uint32 dirty_io;
-} ErtsSchedTypeCounters;
-
-typedef struct ErtsSchedSuspend_ {
-    erts_mtx_t mtx;
-    ErtsSchedTypeCounters online;
-    ErtsSchedTypeCounters curr_online;
-    ErtsSchedTypeCounters active;
-    erts_atomic32_t changing;
-    ErtsProcList *chngq;
-    Eterm changer;
-    ErtsMultiSchedulingBlock nmsb; /* Normal multi Scheduling Block */
-    ErtsMultiSchedulingBlock msb; /* Multi Scheduling Block */
-    ErtsSchedType last_msb_dirty_type;
-} ErtsSchedSuspend;
-
-static ErtsSchedSuspend schdlr_sspnd_global;
 
 static void init_scheduler_suspend(ErtsSchedSuspend *);
 
@@ -307,24 +352,6 @@ schdlr_sspnd_set_nscheds(ErtsSchedTypeCounters *valp,
 	ERTS_INTERNAL_ERROR("Invalid scheduler type");
     }
 }
-
-typedef struct {
-    erts_mtx_t update_mtx;
-    erts_atomic32_t no_runqs;
-    int last_active_runqs;
-    int forced_check_balance;
-    erts_atomic32_t checking_balance;
-    int halftime;
-    int full_reds_history_index;
-    struct {
-	int active_runqs;
-	int reds;
-	erts_aint32_t max_len;
-    } prev_rise;
-    Uint n;
-} ErtsRunQueuesBalanceInfo;
-
-static ErtsRunQueuesBalanceInfo balance_info_global;
 
 #define ERTS_BLNCE_SAVE_RISE(BALANCE_INFO, ACTIVE, MAX_LEN, REDS)       \
 do {                                                                    \
@@ -3862,7 +3889,8 @@ try_inc_no_active_runqs(ErtsRunQueuesBalanceInfo *balance_info, int active)
 static ERTS_INLINE int
 chk_wake_sched(ErtsRunQueue *crq, int ix, int activate)
 {
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(crq);
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     Uint32 flags;
     ErtsRunQueue *wrq;
     if (crq->ix == ix)
@@ -3886,7 +3914,8 @@ wake_scheduler_on_empty_runq(ErtsRunQueue *crq)
     int ix = crq->ix;
     int stop_ix = ix;
     int active_ix, balance_ix;
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(crq);
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
 
     get_no_runqs(balance_info, &active_ix, &balance_ix);
 
@@ -4648,7 +4677,8 @@ try_steal_task(ErtsRunQueue *rq, Process **result_proc)
     int res, vix, active_rqs, blnc_rqs;
     Uint32 flags;
     DECLARE_EQUEUE(contended_runqueues);
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
 
     flags = empty_runq_get_old_flags(rq);
     if (flags & ERTS_RUNQ_FLG_SUSPENDED)
@@ -4791,17 +4821,6 @@ do {									\
 
 erts_atomic_t erts_migration_paths;
 
-typedef struct {
-    size_t size;
-    ErtsMigrationPaths *freelist;
-    struct {
-	ErtsMigrationPaths *first;
-	ErtsMigrationPaths *last;
-    } retired;
-} ErtsMigrationPathsAlloc;
-
-static ErtsMigrationPathsAlloc mpaths_global;
-
 static void
 init_migration_paths(ErtsMigrationPathsAlloc *mpaths)
 {
@@ -4841,12 +4860,12 @@ init_migration_paths(ErtsMigrationPathsAlloc *mpaths)
 }
 
 static ERTS_INLINE ErtsMigrationPaths *
-
-alloc_mpaths(ErtsMigrationPathsAlloc *mpaths, ErtsRunQueuesBalanceInfo *balance_info)
+alloc_mpaths(ErtsSchedulingGroupData *sched_group_data)
 {
     void *block;
     ErtsMigrationPaths *res;
-    ERTS_LC_ASSERT(erts_lc_mtx_is_locked(&balance_info->update_mtx));
+    ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
+    ERTS_LC_ASSERT(erts_lc_mtx_is_locked(&sched_group_data->balance_info.update_mtx));
 
     res = mpaths->freelist;
     if (res) {
@@ -4865,11 +4884,12 @@ alloc_mpaths(ErtsMigrationPathsAlloc *mpaths, ErtsRunQueuesBalanceInfo *balance_
 }
 
 static ERTS_INLINE void
-retire_mpaths(ErtsMigrationPathsAlloc *mpaths, ErtsMigrationPaths *mps, ErtsRunQueuesBalanceInfo *balance_info)
+retire_mpaths(ErtsSchedulingGroupData *sched_group_data, ErtsMigrationPaths *mps)
 {
+    ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
     ErtsThrPrgrVal current;
 
-    ERTS_LC_ASSERT(erts_lc_mtx_is_locked(&balance_info->update_mtx));
+    ERTS_LC_ASSERT(erts_lc_mtx_is_locked(&sched_group_data->balance_info.update_mtx));
 
     current = erts_thr_progress_current();
 
@@ -4906,8 +4926,8 @@ check_balance(ErtsRunQueue *c_rq)
 #if ERTS_MAX_PROCESSES >= (1 << 27)
 #  error check_balance() assumes ERTS_MAX_PROCESS < (1 << 27)
 #endif
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
-    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(c_rq);
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     ErtsRunQueueBalance avg = {0};
     Sint64 scheds_reds, full_scheds_reds;
@@ -5366,7 +5386,7 @@ erts_fprintf(stderr, "--------------------------------\n");
     set_no_active_runqs(balance_info, active);
 
     balance_info->halftime = 1;
-    new_mpaths = alloc_mpaths(mpaths, balance_info);
+    new_mpaths = alloc_mpaths(sched_group_data);
 
     /* Write migration paths */
 
@@ -5478,15 +5498,16 @@ erts_fprintf(stderr, "--------------------------------\n");
     erts_atomic32_set_nob(&balance_info->checking_balance, 0);
 
     balance_info->n++;
-    retire_mpaths(mpaths, old_mpaths, balance_info);
+    retire_mpaths(sched_group_data, old_mpaths);
     erts_mtx_unlock(&balance_info->update_mtx);
 
     erts_runq_lock(c_rq);
 }
 
 static void
-change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, ErtsMigrationPathsAlloc *mpaths, int used)
+change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
 {
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     int qix;
     ASSERT(used > 0);
@@ -5494,7 +5515,7 @@ change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, ErtsMigrationPathsA
     set_no_used_runqs(balance_info, used);
 
     old_mpaths = erts_get_migration_paths_managed();
-    new_mpaths = alloc_mpaths(mpaths, balance_info);
+    new_mpaths = alloc_mpaths(sched_group_data);
 
     /* Write migration paths... */
 
@@ -5532,7 +5553,7 @@ change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, ErtsMigrationPathsA
     /* ... and publish them. */
     erts_atomic_set_wb(&erts_migration_paths, (erts_aint_t) new_mpaths);
 
-    retire_mpaths(mpaths, old_mpaths, balance_info);
+    retire_mpaths(sched_group_data, old_mpaths);
 
     /* Make sure that we balance soon... */
     balance_info->forced_check_balance = 1;
@@ -5550,7 +5571,8 @@ Uint
 erts_debug_nbalance(void)
 {
     Uint n;
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_IX(0);
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     erts_mtx_lock(&balance_info->update_mtx);
     n = balance_info->n;
     erts_mtx_unlock(&balance_info->update_mtx);
@@ -5773,7 +5795,8 @@ no_runqs_to_supervise(ErtsRunQueuesBalanceInfo *balance_info)
 static void *
 runq_supervisor(void *unused)
 {
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
     while (1) {
 	int ix, no_rqs;
 
@@ -6342,9 +6365,10 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 					   * (erts_no_dirty_alloc_instances + 1));
 
     {
-        ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
-        ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
-        ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+        ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+        ErtsRunQueuesBalanceInfo *balance_info = &sched_group_data->balance_info;
+        ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
+        ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
         init_no_runqs(balance_info, no_schedulers_online, no_schedulers_online);
         balance_info->last_active_runqs = no_schedulers;
@@ -6379,7 +6403,7 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
             ASSERT(no_schedulers_online < no_schedulers);
             set_schdlr_sspnd_change_flags |= ERTS_SCHDLR_SSPND_CHNG_ONLN;
             schdlr_sspnd->changer = am_init;
-            change_no_used_runqs(balance_info, mpaths, no_schedulers_online);
+            change_no_used_runqs(sched_group_data, no_schedulers_online);
             for (ix = no_schedulers_online; ix < erts_no_run_queues; ix++)
                 suspend_run_queue(ERTS_RUNQ_IX(ix));
         }
@@ -7608,7 +7632,8 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
     ErtsSchedType exec_type;
     ErtsRunQueue *exec_rq;
     erts_aint32_t dbg_val;
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp);
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     ASSERT(schdlr_sspnd->msb.ongoing);
 
@@ -7821,7 +7846,8 @@ suspend_scheduler(ErtsSchedulerData *esdp)
     ErtsStuckBoundProcesses sbp = {NULL, NULL};
     ErtsSchedType sched_type;
     erts_aint32_t online_flag;
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp);
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     /*
      * Schedulers may be suspended in two different ways:
@@ -8151,7 +8177,8 @@ erts_schedulers_state(Uint *total,
 		      Uint *dirty_io,
 		      Uint *dirty_io_active)
 {
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     if (active || online || dirty_cpu_online
 	|| dirty_cpu_active || dirty_io_active) {
@@ -8261,9 +8288,8 @@ erts_set_schedulers_online(Process *p,
     ErtsProcList *plp;
     int dirty_no, change_dirty, dirty_online;
     Eterm resume_next = NIL;
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
-    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     if (new_no < 1)
 	return ERTS_SCHDLR_SSPND_EINVAL;
@@ -8407,7 +8433,7 @@ erts_set_schedulers_online(Process *p,
 		    have_unlocked_plocks = 1;
 		    erts_proc_unlock(p, plocks);
 		}
-                change_no_used_runqs(balance_info, mpaths, no);
+                change_no_used_runqs(sched_group_data, no);
 
 		for (ix = online; ix < no; ix++)
 		    resume_run_queue(ERTS_RUNQ_IX(ix));
@@ -8445,7 +8471,7 @@ erts_set_schedulers_online(Process *p,
 		    erts_proc_unlock(p, plocks);
 		}
 
-                change_no_used_runqs(balance_info, mpaths, no);
+                change_no_used_runqs(sched_group_data, no);
 		for (ix = no; ix < erts_no_run_queues; ix++)
 		    suspend_run_queue(ERTS_RUNQ_IX(ix));
 
@@ -8516,9 +8542,8 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
     ErtsMultiSchedulingBlock *msbp;
     erts_aint32_t chng_flg;
     int have_blckd_flg;
-    ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
-    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     if (normal) {
 	chng_flg = ERTS_SCHDLR_SSPND_CHNG_NMSB;
@@ -8586,7 +8611,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 
             erts_atomic32_read_bor_nob(&schdlr_sspnd->changing,
                                            chng_flg);
-            change_no_used_runqs(balance_info, mpaths, 1);
+            change_no_used_runqs(sched_group_data, 1);
             for (ix = 1; ix < erts_no_run_queues; ix++)
                 suspend_run_queue(ERTS_RUNQ_IX(ix));
 
@@ -8657,7 +8682,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 
                 online = (int) schdlr_sspnd_get_nscheds(&schdlr_sspnd->online,
 							ERTS_SCHED_NORMAL);
-                change_no_used_runqs(balance_info, mpaths, online);
+                change_no_used_runqs(sched_group_data, online);
 
 		/* Resume all online run queues */
 		for (ix = 1; ix < online; ix++)
@@ -8706,7 +8731,8 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 int
 erts_is_multi_scheduling_blocked(void)
 {
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
     int res;
     erts_mtx_lock(&schdlr_sspnd->mtx);
     if (schdlr_sspnd->msb.blckrs)
@@ -8724,7 +8750,8 @@ erts_multi_scheduling_blockers(Process *p, int normal)
 {
     Eterm res = NIL;
     ErtsMultiSchedulingBlock *msbp;
-    ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+    ErtsSchedulingGroupData *sched_group_data = &scheduling_globals;
+    ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
     msbp = normal ? &schdlr_sspnd->nmsb : &schdlr_sspnd->msb;
 
@@ -14339,7 +14366,8 @@ restart:
             erts_destroy_paused_bif_timers(p);
         }
         if (p->flags & F_SCHDLR_ONLN_WAITQ) {
-            ErtsSchedSuspend *schdlr_sspnd = &schdlr_sspnd_global;
+            ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_PROC(p);
+            ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
             abort_sched_onln_chng_waitq(schdlr_sspnd, p);
             reds -= 100;
         }
