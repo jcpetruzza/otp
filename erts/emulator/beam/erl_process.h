@@ -1949,7 +1949,14 @@ extern int erts_system_profile_ts_type;
 void erts_pre_init_process(void);
 void erts_late_init_process(void);
 void erts_early_init_scheduling(int);
-void erts_init_scheduling(int, int, int, int, int, int);
+void erts_init_scheduling(int no_scheduling_groups,
+                          const char * const *sg_names,
+                          const int *sg_no_schedulers,
+                          const int *sg_no_schedulers_online,
+                          const int *sg_no_dirty_cpu_schedulers,
+                          const int *sg_no_dirty_cpu_schedulers_online,
+                          const int *sg_no_dirty_io_schedulers,
+                          int no_poll_threads);
 void erts_execute_dirty_system_task(Process *c_p);
 int erts_set_gc_state(Process *c_p, int enable);
 Eterm erts_sched_wall_time_request(Process *c_p, int set, int enable,

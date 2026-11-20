@@ -135,6 +135,7 @@ MODULES= \
 	trace_sessions \
 	tracer_test \
 	scheduler_SUITE \
+	scheduling_groups_SUITE \
 	port_trace_SUITE \
 	unique_SUITE \
 	z_SUITE \

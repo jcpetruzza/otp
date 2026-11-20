@@ -3254,6 +3254,63 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	BIF_RET(erts_get_schedulers_binds(BIF_P));
     } else if (ERTS_IS_ATOM_STR("constant_pool_support", BIF_ARG_1)) {
 	BIF_RET(am_true);
+    } else if (ERTS_IS_ATOM_STR("scheduling_groups", BIF_ARG_1)) {
+        ErtsHeapFactory hfact;
+        Eterm *group_keys;
+        Eterm *group_values;
+        Eterm *groups;
+        ERTS_DECL_AM(schedulers);
+        ERTS_DECL_AM(schedulers_online);
+        ERTS_DECL_AM(dirty_cpu_schedulers);
+        ERTS_DECL_AM(dirty_cpu_schedulers_online);
+        ERTS_DECL_AM(dirty_io_schedulers);
+        Eterm keys[5] = {
+            AM_schedulers,
+            AM_schedulers_online,
+            AM_dirty_cpu_schedulers,
+            AM_dirty_cpu_schedulers_online,
+            AM_dirty_io_schedulers
+        };
+
+        groups = erts_alloc(ERTS_ALC_T_TMP,
+                            2 * erts_no_scheduling_groups * sizeof(Eterm));
+        group_keys = groups;
+        group_values = &groups[erts_no_scheduling_groups];
+        erts_factory_proc_init(&hfact, BIF_P);
+
+        for (i = 0; i < erts_no_scheduling_groups; i++) {
+            ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(i);
+            Eterm values[5];
+            Uint schedulers_online;
+            Uint dirty_cpu_schedulers_online;
+
+            erts_scheduling_group_state(i,
+                                        &schedulers_online,
+                                        NULL,
+                                        &dirty_cpu_schedulers_online,
+                                        NULL,
+                                        NULL);
+            values[0] = make_small(esgp->no_schedulers);
+            values[1] = make_small(schedulers_online);
+            values[2] = make_small(esgp->no_dirty_cpu_schedulers);
+            values[3] = make_small(dirty_cpu_schedulers_online);
+            values[4] = make_small(esgp->no_dirty_io_schedulers);
+
+            group_keys[i] = esgp->id;
+            group_values[i] =
+                erts_map_from_ks_and_vs(&hfact,
+                                        keys,
+                                        values,
+                                        5);
+        }
+
+        res = erts_map_from_ks_and_vs(&hfact,
+                                      group_keys,
+                                      group_values,
+                                      erts_no_scheduling_groups);
+        erts_factory_close(&hfact);
+        erts_free(ERTS_ALC_T_TMP, groups);
+        BIF_RET(res);
     } else if (ERTS_IS_ATOM_STR("schedulers", BIF_ARG_1)
 	       || ERTS_IS_ATOM_STR("schedulers_total", BIF_ARG_1)) {
 	res = make_small(erts_no_schedulers);

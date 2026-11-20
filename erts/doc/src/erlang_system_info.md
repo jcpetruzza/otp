@@ -76,6 +76,7 @@ order to make it easier to navigate.
   [`scheduler_bind_type`](`m:erlang#system_info_scheduler_bind_type`),
   [`scheduler_bindings`](`m:erlang#system_info_scheduler_bindings`),
   [`scheduler_id`](`m:erlang#system_info_scheduler_id`),
+  [`scheduling_groups`](`m:erlang#system_info_scheduling_groups`),
   [`schedulers`](`m:erlang#system_info_schedulers`),
   [`smp_support`](`m:erlang#system_info_smp_support`),
   [`threads`](`m:erlang#system_info_threads`),
@@ -709,6 +710,11 @@ Returns information about schedulers, scheduling and threads in the current syst
 
   See also
   [`erlang:system_info(schedulers)`](`m:erlang#system_info_schedulers`).
+
+- `scheduling_groups`{: #system_info_scheduling_groups } - Returns a map from
+  scheduling group names to maps containing the scheduler, online scheduler,
+  dirty CPU scheduler, online dirty CPU scheduler, and dirty IO scheduler
+  counts.
 
 - `schedulers`{: #system_info_schedulers } - Returns the number of scheduler
   threads used by the emulator. Scheduler threads online schedules Erlang
