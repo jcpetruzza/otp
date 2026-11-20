@@ -2501,7 +2501,7 @@ erts_proc_set_error_handler(Process *p, Eterm handler)
 
 #include "erl_thr_progress.h"
 
-extern erts_atomic_t erts_migration_paths;
+extern erts_atomic_t *erts_migration_paths;
 
 #if ERTS_HAVE_SCHED_UTIL_BALANCING_SUPPORT
 int erts_get_sched_util(ErtsRunQueue *rq,
@@ -2510,23 +2510,23 @@ int erts_get_sched_util(ErtsRunQueue *rq,
 #endif
 
 
-ERTS_GLB_INLINE ErtsMigrationPaths *erts_get_migration_paths_managed(void);
-ERTS_GLB_INLINE ErtsMigrationPaths *erts_get_migration_paths(void);
+ERTS_GLB_INLINE ErtsMigrationPaths *erts_get_migration_paths_managed(int sched_group_ix);
+ERTS_GLB_INLINE ErtsMigrationPaths *erts_get_migration_paths(const ErtsRunQueue *rq);
 ERTS_GLB_INLINE ErtsRunQueue *erts_check_emigration_need(ErtsRunQueue *c_rq,
 							 int prio);
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE ErtsMigrationPaths *
-erts_get_migration_paths_managed(void)
+erts_get_migration_paths_managed(int sched_group_ix)
 {
-    return (ErtsMigrationPaths *) erts_atomic_read_ddrb(&erts_migration_paths);
+    return (ErtsMigrationPaths *) erts_atomic_read_ddrb(&erts_migration_paths[sched_group_ix]);
 }
 
 ERTS_GLB_INLINE ErtsMigrationPaths *
-erts_get_migration_paths(void)
+erts_get_migration_paths(const ErtsRunQueue *rq)
 {
     if (erts_thr_progress_is_managed_thread())
-	return erts_get_migration_paths_managed();
+        return erts_get_migration_paths_managed(rq->sched_group_ix);
     else
 	return NULL;
 }
@@ -2534,7 +2534,7 @@ erts_get_migration_paths(void)
 ERTS_GLB_INLINE ErtsRunQueue *
 erts_check_emigration_need(ErtsRunQueue *c_rq, int prio)
 {
-    ErtsMigrationPaths *mps = erts_get_migration_paths();
+    ErtsMigrationPaths *mps = erts_get_migration_paths(c_rq);
     ErtsMigrationPath *mp;
     Uint32 flags;
 

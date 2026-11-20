@@ -220,6 +220,8 @@ typedef struct {
 } ErtsRunQueueSupervision;
 
 typedef struct {
+    int ix;
+
     ErtsSchedSuspend schdlr_sspnd;
     ErtsRunQueuesBalanceInfo balance_info;
     ErtsMigrationPathsAlloc mpaths;
@@ -4398,7 +4400,7 @@ evacuate_run_queue(ErtsRunQueue *rq,
 
     ASSERT(!ERTS_RUNQ_IX_IS_DIRTY(rq->ix));
 
-    mps = erts_get_migration_paths_managed();
+    mps = erts_get_migration_paths_managed(rq->sched_group_ix);
     mp = &mps->mpath[rq->ix];
 
     /* Evacuate scheduled misc ops */
@@ -4841,11 +4843,12 @@ do {									\
 
 #define ERTS_PRE_ALLOCED_MPATHS 8
 
-erts_atomic_t erts_migration_paths;
+erts_atomic_t *erts_migration_paths;
 
 static void
-init_migration_paths(ErtsMigrationPathsAlloc *mpaths)
+init_migration_paths(ErtsSchedulingGroupData *sched_group_data)
 {
+    ErtsMigrationPathsAlloc *mpaths = &sched_group_data->mpaths;
     int qix, i;
     char *p;
     ErtsMigrationPaths *mps;
@@ -4878,7 +4881,8 @@ init_migration_paths(ErtsMigrationPathsAlloc *mpaths)
 	    mps->mpath[qix].prio[pix].flags = 0;
 	}
     }
-    erts_atomic_init_wb(&erts_migration_paths, (erts_aint_t) mps);
+    erts_atomic_init_wb(&erts_migration_paths[sched_group_data->ix],
+                        (erts_aint_t) mps);
 }
 
 static ERTS_INLINE ErtsMigrationPaths *
@@ -5464,7 +5468,7 @@ erts_fprintf(stderr, "--------------------------------\n");
 	}
     }
 
-    old_mpaths = erts_get_migration_paths_managed();
+    old_mpaths = erts_get_migration_paths_managed(sched_group_data->ix);
 
     /* Keep offline run-queues as is */
     for (qix = blnc_no_rqs; qix < erts_no_schedulers; qix++) {
@@ -5484,7 +5488,8 @@ erts_fprintf(stderr, "--------------------------------\n");
 
 
     /* Publish new migration paths... */
-    erts_atomic_set_wb(&erts_migration_paths, (erts_aint_t) new_mpaths);
+    erts_atomic_set_wb(&erts_migration_paths[sched_group_data->ix],
+                       (erts_aint_t) new_mpaths);
 
     /* Reset balance statistics in all online queues */
     for (qix = 0; qix < blnc_no_rqs; qix++) {
@@ -5538,7 +5543,7 @@ change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
     erts_mtx_lock(&balance_info->update_mtx);
     set_no_used_runqs(balance_info, used);
 
-    old_mpaths = erts_get_migration_paths_managed();
+    old_mpaths = erts_get_migration_paths_managed(sched_group_data->ix);
     new_mpaths = alloc_mpaths(sched_group_data);
 
     /* Write migration paths... */
@@ -5575,7 +5580,8 @@ change_no_used_runqs(ErtsSchedulingGroupData *sched_group_data, int used)
     }
 
     /* ... and publish them. */
-    erts_atomic_set_wb(&erts_migration_paths, (erts_aint_t) new_mpaths);
+    erts_atomic_set_wb(&erts_migration_paths[sched_group_data->ix],
+                       (erts_aint_t) new_mpaths);
 
     retire_mpaths(sched_group_data, old_mpaths);
 
@@ -6192,6 +6198,11 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         erts_alloc_permanent_cache_aligned(
             ERTS_ALC_T_SCHDL_GROUP,
             (n * sizeof(ErtsAlignedSchedulingGroup)));
+    erts_migration_paths =
+        erts_alloc_permanent_cache_aligned(
+            ERTS_ALC_T_SCHDL_GROUP,
+            (n * sizeof(erts_atomic_t))
+        );
 
     {
         ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(0);
@@ -6421,6 +6432,8 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
         Uint no_run_queues = ERTS_SCHEDULING_GROUP_IX(0)->no_run_queues;
 
+        sched_group_data->ix = 0;
+
         if (no_run_queues != 1) {
             sched_group_data->run_queue_info = erts_alloc(ERTS_ALC_T_RUNQ_BLNS,
                                                           sizeof(ErtsRunQueueBalance)
@@ -6443,7 +6456,7 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         balance_info->prev_rise.reds = 0;
         balance_info->n = 0;
 
-        init_migration_paths(mpaths);
+        init_migration_paths(sched_group_data);
 
         init_scheduler_suspend(schdlr_sspnd);
 
@@ -9939,7 +9952,7 @@ Process *erts_schedule(ErtsSchedulerData *esdp, Process *p, int calls)
 
 	    ERTS_LC_ASSERT(!erts_thr_progress_is_blocking());
 
-	    mps = erts_get_migration_paths_managed();
+            mps = erts_get_migration_paths_managed(SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp)->ix);
 	    mp = &mps->mpath[rq->ix];
 
 	    if (mp->flags & ERTS_RUNQ_FLGS_IMMIGRATE_QMASK)
@@ -12146,7 +12159,7 @@ erts_schedule_misc_op(void (*func)(void *), void *arg)
     ErtsSchedulerData *esdp = erts_get_scheduler_data();
     ErtsRunQueue *rq = esdp ? esdp->run_queue : ERTS_RUNQ_IX(0);
     ErtsMiscOpList *molp = misc_op_list_alloc();
-    ErtsMigrationPaths *mpaths = erts_get_migration_paths();
+    ErtsMigrationPaths *mpaths = erts_get_migration_paths(rq);
 
     if (!mpaths)
 	rq = ERTS_RUNQ_IX(0);
