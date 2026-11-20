@@ -4789,35 +4789,37 @@ do {									\
 
 erts_atomic_t erts_migration_paths;
 
-static struct {
+typedef struct {
     size_t size;
     ErtsMigrationPaths *freelist;
     struct {
 	ErtsMigrationPaths *first;
 	ErtsMigrationPaths *last;
     } retired;
-} mpaths;
+} ErtsMigrationPathsAlloc;
+
+static ErtsMigrationPathsAlloc mpaths_global;
 
 static void
-init_migration_paths(void)
+init_migration_paths(ErtsMigrationPathsAlloc *mpaths)
 {
     int qix, i;
     char *p;
     ErtsMigrationPaths *mps;
 
-    mpaths.size = sizeof(ErtsMigrationPaths);
-    mpaths.size += sizeof(ErtsMigrationPath)*(erts_no_schedulers-1);
-    mpaths.size = ERTS_ALC_CACHE_LINE_ALIGN_SIZE(mpaths.size);
+    mpaths->size = sizeof(ErtsMigrationPaths);
+    mpaths->size += sizeof(ErtsMigrationPath)*(erts_no_schedulers-1);
+    mpaths->size = ERTS_ALC_CACHE_LINE_ALIGN_SIZE(mpaths->size);
 
     p = erts_alloc_permanent_cache_aligned(ERTS_ALC_T_LL_MPATHS,
-					   (mpaths.size
+                                           (mpaths->size
 					    * ERTS_PRE_ALLOCED_MPATHS));
-    mpaths.freelist = NULL;
+    mpaths->freelist = NULL;
     for (i = 0; i < ERTS_PRE_ALLOCED_MPATHS-1; i++) {
 	mps = (ErtsMigrationPaths *) p;
-	mps->next = mpaths.freelist;
-	mpaths.freelist = mps;
-	p += mpaths.size;
+        mps->next = mpaths->freelist;
+        mpaths->freelist = mps;
+        p += mpaths->size;
     }
 
     mps = (ErtsMigrationPaths *) p;
@@ -4837,20 +4839,21 @@ init_migration_paths(void)
 }
 
 static ERTS_INLINE ErtsMigrationPaths *
-alloc_mpaths(ErtsRunQueuesBalanceInfo *balance_info)
+
+alloc_mpaths(ErtsMigrationPathsAlloc *mpaths, ErtsRunQueuesBalanceInfo *balance_info)
 {
     void *block;
     ErtsMigrationPaths *res;
     ERTS_LC_ASSERT(erts_lc_mtx_is_locked(&balance_info->update_mtx));
 
-    res = mpaths.freelist;
+    res = mpaths->freelist;
     if (res) {
-	mpaths.freelist = res->next;
+        mpaths->freelist = res->next;
 	res->block = NULL;
 	return res;
     }
     res = erts_alloc(ERTS_ALC_T_SL_MPATHS,
-		     mpaths.size+ERTS_CACHE_LINE_SIZE);
+                     mpaths->size+ERTS_CACHE_LINE_SIZE);
     block = (void *) res;
     if (((UWord) res) & ERTS_CACHE_LINE_MASK)
 	res = (ErtsMigrationPaths *) ((((UWord) res) & ~ERTS_CACHE_LINE_MASK)
@@ -4860,7 +4863,7 @@ alloc_mpaths(ErtsRunQueuesBalanceInfo *balance_info)
 }
 
 static ERTS_INLINE void
-retire_mpaths(ErtsMigrationPaths *mps, ErtsRunQueuesBalanceInfo *balance_info)
+retire_mpaths(ErtsMigrationPathsAlloc *mpaths, ErtsMigrationPaths *mps, ErtsRunQueuesBalanceInfo *balance_info)
 {
     ErtsThrPrgrVal current;
 
@@ -4868,31 +4871,31 @@ retire_mpaths(ErtsMigrationPaths *mps, ErtsRunQueuesBalanceInfo *balance_info)
 
     current = erts_thr_progress_current();
 
-    while (mpaths.retired.first) {
-	ErtsMigrationPaths *tmp = mpaths.retired.first;
+    while (mpaths->retired.first) {
+        ErtsMigrationPaths *tmp = mpaths->retired.first;
 	if (!erts_thr_progress_has_reached_this(current, tmp->thr_prgr))
 	    break;
-	mpaths.retired.first = tmp->next;
+        mpaths->retired.first = tmp->next;
 	if (tmp->block) {
 	    erts_free(ERTS_ALC_T_SL_MPATHS, tmp->block);
 	}
 	else {
-	    tmp->next = mpaths.freelist;
-	    mpaths.freelist = tmp;
+            tmp->next = mpaths->freelist;
+            mpaths->freelist = tmp;
 	}
     }
 
-    if (!mpaths.retired.first)
-	mpaths.retired.last = NULL;
+    if (!mpaths->retired.first)
+        mpaths->retired.last = NULL;
 
     mps->thr_prgr = erts_thr_progress_later(NULL);
     mps->next = NULL;
 
-    if (mpaths.retired.last)
-	mpaths.retired.last->next = mps;
+    if (mpaths->retired.last)
+        mpaths->retired.last->next = mps;
     else
-	mpaths.retired.first = mps;
-    mpaths.retired.last = mps;
+        mpaths->retired.first = mps;
+    mpaths->retired.last = mps;
 }
 
 static void
@@ -4902,6 +4905,7 @@ check_balance(ErtsRunQueue *c_rq)
 #  error check_balance() assumes ERTS_MAX_PROCESS < (1 << 27)
 #endif
     ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     ErtsRunQueueBalance avg = {0};
     Sint64 scheds_reds, full_scheds_reds;
@@ -5360,7 +5364,7 @@ erts_fprintf(stderr, "--------------------------------\n");
     set_no_active_runqs(balance_info, active);
 
     balance_info->halftime = 1;
-    new_mpaths = alloc_mpaths(balance_info);
+    new_mpaths = alloc_mpaths(mpaths, balance_info);
 
     /* Write migration paths */
 
@@ -5472,14 +5476,14 @@ erts_fprintf(stderr, "--------------------------------\n");
     erts_atomic32_set_nob(&balance_info->checking_balance, 0);
 
     balance_info->n++;
-    retire_mpaths(old_mpaths, balance_info);
+    retire_mpaths(mpaths, old_mpaths, balance_info);
     erts_mtx_unlock(&balance_info->update_mtx);
 
     erts_runq_lock(c_rq);
 }
 
 static void
-change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, int used)
+change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, ErtsMigrationPathsAlloc *mpaths, int used)
 {
     ErtsMigrationPaths *new_mpaths, *old_mpaths;
     int qix;
@@ -5488,7 +5492,7 @@ change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, int used)
     set_no_used_runqs(balance_info, used);
 
     old_mpaths = erts_get_migration_paths_managed();
-    new_mpaths = alloc_mpaths(balance_info);
+    new_mpaths = alloc_mpaths(mpaths, balance_info);
 
     /* Write migration paths... */
 
@@ -5526,7 +5530,7 @@ change_no_used_runqs(ErtsRunQueuesBalanceInfo *balance_info, int used)
     /* ... and publish them. */
     erts_atomic_set_wb(&erts_migration_paths, (erts_aint_t) new_mpaths);
 
-    retire_mpaths(old_mpaths, balance_info);
+    retire_mpaths(mpaths, old_mpaths, balance_info);
 
     /* Make sure that we balance soon... */
     balance_info->forced_check_balance = 1;
@@ -6337,6 +6341,7 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 
     {
         ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+        ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
 
         init_no_runqs(balance_info, no_schedulers_online, no_schedulers_online);
         balance_info->last_active_runqs = no_schedulers;
@@ -6350,9 +6355,10 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
         balance_info->prev_rise.max_len = 0;
         balance_info->prev_rise.reds = 0;
         balance_info->n = 0;
+
+        init_migration_paths(mpaths);
     }
 
-    init_migration_paths();
 
     init_scheduler_suspend();
 
@@ -6370,11 +6376,12 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 
     if (no_schedulers_online != no_schedulers) {
         ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+        ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
 
 	ASSERT(no_schedulers_online < no_schedulers);
 	set_schdlr_sspnd_change_flags |= ERTS_SCHDLR_SSPND_CHNG_ONLN;
 	schdlr_sspnd.changer = am_init;
-        change_no_used_runqs(balance_info, no_schedulers_online);
+        change_no_used_runqs(balance_info, mpaths, no_schedulers_online);
 	for (ix = no_schedulers_online; ix < erts_no_run_queues; ix++)
 	    suspend_run_queue(ERTS_RUNQ_IX(ix));
     }
@@ -8252,6 +8259,7 @@ erts_set_schedulers_online(Process *p,
     int dirty_no, change_dirty, dirty_online;
     Eterm resume_next = NIL;
     ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
 
     if (new_no < 1)
 	return ERTS_SCHDLR_SSPND_EINVAL;
@@ -8395,7 +8403,7 @@ erts_set_schedulers_online(Process *p,
 		    have_unlocked_plocks = 1;
 		    erts_proc_unlock(p, plocks);
 		}
-                change_no_used_runqs(balance_info, no);
+                change_no_used_runqs(balance_info, mpaths, no);
 
 		for (ix = online; ix < no; ix++)
 		    resume_run_queue(ERTS_RUNQ_IX(ix));
@@ -8433,7 +8441,7 @@ erts_set_schedulers_online(Process *p,
 		    erts_proc_unlock(p, plocks);
 		}
 
-                change_no_used_runqs(balance_info, no);
+                change_no_used_runqs(balance_info, mpaths, no);
 		for (ix = no; ix < erts_no_run_queues; ix++)
 		    suspend_run_queue(ERTS_RUNQ_IX(ix));
 
@@ -8505,6 +8513,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
     erts_aint32_t chng_flg;
     int have_blckd_flg;
     ErtsRunQueuesBalanceInfo *balance_info = &balance_info_global;
+    ErtsMigrationPathsAlloc *mpaths = &mpaths_global;
 
     if (normal) {
 	chng_flg = ERTS_SCHDLR_SSPND_CHNG_NMSB;
@@ -8572,7 +8581,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 
             erts_atomic32_read_bor_nob(&schdlr_sspnd.changing,
                                            chng_flg);
-            change_no_used_runqs(balance_info, 1);
+            change_no_used_runqs(balance_info, mpaths, 1);
             for (ix = 1; ix < erts_no_run_queues; ix++)
                 suspend_run_queue(ERTS_RUNQ_IX(ix));
 
@@ -8643,7 +8652,7 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int normal
 
                 online = (int) schdlr_sspnd_get_nscheds(&schdlr_sspnd.online,
 							ERTS_SCHED_NORMAL);
-                change_no_used_runqs(balance_info, online);
+                change_no_used_runqs(balance_info, mpaths, online);
 
 		/* Resume all online run queues */
 		for (ix = 1; ix < online; ix++)
