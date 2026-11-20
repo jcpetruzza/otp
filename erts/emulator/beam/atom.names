@@ -656,6 +656,7 @@ atom scheduler_id
 atom scheduler_wall_time
 atom scheduler_wall_time_all
 atom schedulers_online
+atom scheduling_group
 atom scheme
 atom scientific
 atom scope

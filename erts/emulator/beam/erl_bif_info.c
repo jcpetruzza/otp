@@ -798,6 +798,7 @@ collect_one_suspend_monitor(ErtsMonitor *mon, void *vsmicp, Sint reds)
 #define ERTS_PI_IX_DICTIONARY_LOOKUP                    38
 #define ERTS_PI_IX_LABEL                                39
 #define ERTS_PI_IX_PRIORITY_MESSAGES                    40
+#define ERTS_PI_IX_SCHEDULING_GROUP                     41
 
 #define ERTS_PI_UNRESERVE(RS, SZ) \
     (ASSERT((RS) >= (SZ)), (RS) -= (SZ))
@@ -851,7 +852,8 @@ static ErtsProcessInfoArgs pi_args[] = {
     {am_async_dist, 0, 0, ERTS_PROC_LOCK_MAIN},
     {am_dictionary, 3, ERTS_PI_FLAG_FORCE_SIG_SEND|ERTS_PI_FLAG_KEY_TUPLE2, ERTS_PROC_LOCK_MAIN},
     {am_label, 0, ERTS_PI_FLAG_FORCE_SIG_SEND, ERTS_PROC_LOCK_MAIN},
-    {am_priority_messages, 0, 0, ERTS_PROC_LOCK_MAIN}
+    {am_priority_messages, 0, 0, ERTS_PROC_LOCK_MAIN},
+    {am_scheduling_group, 0, 0, ERTS_PROC_LOCK_MAIN}
 };
 
 #define ERTS_PI_ARGS ((int) (sizeof(pi_args)/sizeof(pi_args[0])))
@@ -988,6 +990,8 @@ pi_arg2ix(Eterm arg, Eterm *extrap)
         return ERTS_PI_IX_LABEL;
     case am_priority_messages:
         return ERTS_PI_IX_PRIORITY_MESSAGES;
+    case am_scheduling_group:
+        return ERTS_PI_IX_SCHEDULING_GROUP;
     default:
         if (is_tuple_arity(arg, 2)) {
             Eterm *tpl = tuple_val(arg);
@@ -2269,6 +2273,10 @@ process_info_aux(Process *c_p,
 
     case ERTS_PI_IX_ASYNC_DIST:
         res = (rp->flags & F_ASYNC_DIST) ? am_true : am_false;
+        break;
+
+    case ERTS_PI_IX_SCHEDULING_GROUP:
+        res = ERTS_SCHEDULING_GROUP_FOR_PROC(rp)->id;
         break;
 
     case ERTS_PI_IX_MAGIC_REF: {
