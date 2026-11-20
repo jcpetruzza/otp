@@ -106,6 +106,7 @@ struct saved_calls {
 extern Export exp_send, exp_receive, exp_timeout;
 extern int ERTS_WRITE_UNLIKELY(erts_sched_compact_load);
 extern int ERTS_WRITE_UNLIKELY(erts_sched_balance_util);
+extern Uint ERTS_WRITE_UNLIKELY(erts_no_scheduling_groups);
 extern Uint ERTS_WRITE_UNLIKELY(erts_no_schedulers);
 extern Uint ERTS_WRITE_UNLIKELY(erts_no_total_schedulers);
 extern Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_cpu_schedulers);
@@ -410,6 +411,7 @@ typedef enum {
     ERTS_SCHED_TYPE_LAST = ERTS_SCHED_DIRTY_IO
 } ErtsSchedType;
 
+typedef struct ErtsSchedulingGroup_ ErtsSchedulingGroup;
 typedef struct ErtsSchedulerData_ ErtsSchedulerData;
 
 typedef struct ErtsRunQueue_ ErtsRunQueue;
@@ -489,6 +491,7 @@ struct ErtsRunQueue_ {
        They are grouped together to improve cache locality. */
 
     int ix;
+    int sched_group_ix;
     ErtsSchedulerSleepList sleepers;
 
     ErtsSchedulerData *scheduler;
@@ -758,6 +761,26 @@ extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_scheduler_dat
 extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_cpu_scheduler_data);
 extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_io_scheduler_data);
 
+struct ErtsSchedulingGroup_ {
+    /* id is an atom */
+    Eterm id;
+    Uint ix;
+
+    Uint no_schedulers;
+    Uint no_dirty_cpu_schedulers;
+    Uint no_dirty_io_schedulers;
+
+    Uint first_scheduler_ix;
+    Uint first_dirty_cpu_ix;
+    Uint first_dirty_io_ix;
+};
+
+typedef union {
+    ErtsSchedulingGroup esg;
+    char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(ErtsSchedulingGroup))];
+} ErtsAlignedSchedulingGroup;
+
+extern ErtsAlignedSchedulingGroup * ERTS_WRITE_UNLIKELY(erts_aligned_scheduling_groups);
 
 #if defined(ERTS_ENABLE_LOCK_CHECK)
 int erts_lc_runq_is_locked(ErtsRunQueue *);
@@ -1848,10 +1871,29 @@ extern int erts_system_profile_ts_type;
 	}						\
     } while (0)
 
-#define ERTS_NUM_DIRTY_CPU_RUNQS 1
-#define ERTS_NUM_DIRTY_IO_RUNQS 1
+#define ERTS_SCHEDULING_GROUP_IX(IX)                                    \
+  (ASSERT(0 <= (IX) && (IX) < erts_no_scheduling_groups),               \
+   &erts_aligned_scheduling_groups[(IX)].esg)
 
-#define ERTS_NUM_DIRTY_RUNQS (ERTS_NUM_DIRTY_CPU_RUNQS+ERTS_NUM_DIRTY_IO_RUNQS)
+#define ERTS_SCHEDULING_GROUP_FOR_RUNQ(RQ)                              \
+  (ERTS_SCHEDULING_GROUP_IX((RQ)->sched_group_ix))
+
+#define ERTS_SCHEDULING_GROUP_FOR_SCHEDULER(Schdlr)                     \
+  (ERTS_SCHEDULING_GROUP_FOR_RUNQ(Schdlr->run_queue))
+
+/* For now all processes are assigned to the default group */
+#define ERTS_SCHEDULING_GROUP_FOR_PROC(Proc)                            \
+  (ERTS_SCHEDULING_GROUP_IX(0))
+
+#define ERTS_NUM_DIRTY_CPU_RUNQS_PER_GROUP 1
+#define ERTS_NUM_DIRTY_IO_RUNQS_PER_GROUP  1
+#define ERTS_NUM_DIRTY_RUNQS_PER_GROUP                                  \
+  (ERTS_NUM_DIRTY_CPU_RUNQS_PER_GROUP+ERTS_NUM_DIRTY_IO_RUNQS_PER_GROUP)
+
+#define ERTS_NUM_DIRTY_CPU_RUNQS (erts_no_scheduling_groups * ERTS_NUM_DIRTY_CPU_RUNQS_PER_GROUP)
+#define ERTS_NUM_DIRTY_IO_RUNQS  (erts_no_scheduling_groups * ERTS_NUM_DIRTY_IO_RUNQS_PER_GROUP)
+
+#define ERTS_NUM_DIRTY_RUNQS (erts_no_scheduling_groups * ERTS_NUM_DIRTY_RUNQS_PER_GROUP)
 
 #define ERTS_RUNQ_IX(IX)						\
   (ASSERT(0 <= (IX) && (IX) < erts_no_run_queues+ERTS_NUM_DIRTY_RUNQS), \
@@ -1859,13 +1901,18 @@ extern int erts_system_profile_ts_type;
 #define ERTS_RUNQ_IX_IS_DIRTY(IX)					\
   (ASSERT(0 <= (IX) && (IX) < erts_no_run_queues+ERTS_NUM_DIRTY_RUNQS), \
    (erts_no_run_queues <= (IX)))
-#define ERTS_DIRTY_RUNQ_IX(IX)						\
-  (ASSERT(ERTS_RUNQ_IX_IS_DIRTY(IX)),					\
-   &erts_aligned_run_queues[(IX)].runq)
-#define ERTS_DIRTY_CPU_RUNQ (&erts_aligned_run_queues[erts_no_run_queues].runq)
-#define ERTS_DIRTY_IO_RUNQ  (&erts_aligned_run_queues[erts_no_run_queues+1].runq)
-#define ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(RQ) ((RQ) == ERTS_DIRTY_CPU_RUNQ)
-#define ERTS_RUNQ_IS_DIRTY_IO_RUNQ(RQ) ((RQ) == ERTS_DIRTY_IO_RUNQ)
+#define ERTS_RUNQ_IX_IS_DIRTY_CPU(IX)                                   \
+  (ASSERT(0 <= (IX) && (IX) < erts_no_run_queues+ERTS_NUM_DIRTY_RUNQS), \
+   (erts_no_run_queues <= (IX)) && (IX) < erts_no_run_queues+ERTS_NUM_DIRTY_CPU_RUNQS)
+#define ERTS_RUNQ_IX_IS_DIRTY_IO(IX)                                    \
+  (ASSERT(0 <= (IX) && (IX) < erts_no_run_queues+ERTS_NUM_DIRTY_RUNQS), \
+   (erts_no_run_queues+ERTS_NUM_DIRTY_CPU_RUNQS <= (IX)))
+#define ERTS_DIRTY_CPU_RUNQ(SG)                                 \
+  (ERTS_RUNQ_IX(erts_no_run_queues + (SG)->ix))
+#define ERTS_DIRTY_IO_RUNQ(SG)                                  \
+  (ERTS_RUNQ_IX(erts_no_run_queues + ERTS_NUM_DIRTY_CPU_RUNQS + (SG)->ix))
+#define ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(RQ) (ERTS_RUNQ_IX_IS_DIRTY_CPU((RQ)->ix))
+#define ERTS_RUNQ_IS_DIRTY_IO_RUNQ(RQ) (ERTS_RUNQ_IX_IS_DIRTY_IO((RQ)->ix))
 #define ERTS_SCHEDULER_IX(IX)						\
   (ASSERT(0 <= (IX) && (IX) < erts_no_schedulers),			\
    &erts_aligned_scheduler_data[(IX)].esd)

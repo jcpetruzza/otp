@@ -190,20 +190,21 @@ static ErtsSchedulingGroupData scheduling_globals;
   (&scheduling_globals)
 
 #define SCHEDULING_GROUP_DATA_FOR_RUNQ(RUNQ)    \
-  (&scheduling_globals)
+  (SCHEDULING_GROUP_DATA_IX((RUNQ)->sched_group_ix))
 
 #define SCHEDULING_GROUP_DATA_FOR_SCHEDULER(S)  \
-  (&scheduling_globals)
+  (SCHEDULING_GROUP_DATA_IX(ERTS_SCHEDULING_GROUP_FOR_SCHEDULER((S))->ix))
 
 /* For now all processes are in the default group */
 #define SCHEDULING_GROUP_DATA_FOR_PROC(P)       \
-  (&scheduling_globals)
+  (SCHEDULING_GROUP_DATA_IX(0))
 
 const Process erts_invalid_process = {{ERTS_INVALID_PID}};
 
 int ERTS_WRITE_UNLIKELY(erts_default_spo_flags) = SPO_ON_HEAP_MSGQ;
 int ERTS_WRITE_UNLIKELY(erts_sched_compact_load);
 int ERTS_WRITE_UNLIKELY(erts_sched_balance_util) = 0;
+Uint ERTS_WRITE_UNLIKELY(erts_no_scheduling_groups);
 Uint ERTS_WRITE_UNLIKELY(erts_no_schedulers);
 Uint ERTS_WRITE_UNLIKELY(erts_no_total_schedulers);
 Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_cpu_schedulers) = 0;
@@ -420,6 +421,8 @@ dirty_active(ErtsSchedulerData *esdp, erts_aint32_t add)
     val += add;
     erts_atomic32_set_nob(ap, val);
 }
+
+ErtsAlignedSchedulingGroup * ERTS_WRITE_UNLIKELY(erts_aligned_scheduling_groups);
 
 ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_scheduler_data);
 ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_cpu_scheduler_data);
@@ -4324,10 +4327,10 @@ clear_proc_dirty_queue_bit(Process *p, ErtsRunQueue *rq, int prio_bit)
 {
     erts_aint32_t old;
     erts_aint32_t qb = prio_bit;
-    if (rq == ERTS_DIRTY_CPU_RUNQ)
+    if (ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(rq))
 	qb <<= ERTS_PXSFLGS_IN_CPU_PRQ_MASK_OFFSET;
     else {
-	ASSERT(rq == ERTS_DIRTY_IO_RUNQ);
+        ASSERT(ERTS_RUNQ_IS_DIRTY_IO_RUNQ(rq));
 	qb <<= ERTS_PXSFLGS_IN_IO_PRQ_MASK_OFFSET;
     }
     old = (int) erts_atomic32_read_band_mb(&p->xstate, ~qb);
@@ -6035,25 +6038,31 @@ init_scheduler_data(ErtsSchedulerData* esdp, int num,
 		    Process *shadow_proc,
                     Uint64 time_stamp)
 {
+    const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_FOR_RUNQ(runq);
     esdp->timer_wheel = NULL;
     esdp->match_pseudo_process = NULL;
     esdp->free_process = NULL;
 
     esdp->run_queue = runq;
     if (ERTS_RUNQ_IX_IS_DIRTY(runq->ix)) {
+        Uint first_scheduler_ix;
 	esdp->no = 0;
-        if (runq == ERTS_DIRTY_CPU_RUNQ)
+        if (ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(runq)) {
             esdp->type = ERTS_SCHED_DIRTY_CPU;
+            first_scheduler_ix = esgp->first_dirty_cpu_ix;
+        }
         else {
-            ASSERT(runq == ERTS_DIRTY_IO_RUNQ);
+            ASSERT(ERTS_RUNQ_IS_DIRTY_IO_RUNQ(runq));
             esdp->type = ERTS_SCHED_DIRTY_IO;
+            first_scheduler_ix = esgp->first_dirty_io_ix;
         }
         esdp->dirty_no = (Uint) num;
-        if (num == 1) {
+        if ((Uint) (num - 1) == first_scheduler_ix) {
             /*
-             * Multi-scheduling block functionality depends
-             * on finding dirty scheduler number 1 here...
-             */
+            * Multi-scheduling block functionality depends
+            * on finding dirty scheduler number 1 of the group here...
+            */
+
             runq->scheduler = esdp;
         }
     }
@@ -6154,6 +6163,28 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
     ASSERT(no_dirty_cpu_schedulers_online >= 1);
     ASSERT(erts_no_poll_threads == no_poll_threads);
 
+    /* Create and initialize scheduling groups */
+    erts_no_scheduling_groups = n = 1;
+    erts_aligned_scheduling_groups =
+        erts_alloc_permanent_cache_aligned(
+            ERTS_ALC_T_SCHDL_GROUP,
+            (n * sizeof(ErtsAlignedSchedulingGroup)));
+
+    {
+        ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(0);
+
+        esgp->id = am_default;
+        esgp->ix = 0;
+
+        esgp->no_schedulers = no_schedulers;
+        esgp->no_dirty_cpu_schedulers = no_dirty_cpu_schedulers;
+        esgp->no_dirty_io_schedulers = no_dirty_io_schedulers;
+
+        esgp->first_scheduler_ix = 0;
+        esgp->first_dirty_cpu_ix = 0;
+        esgp->first_dirty_io_ix = 0;
+    }
+
     /* Create and initialize run queues */
 
     n = no_schedulers;
@@ -6175,6 +6206,7 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 	ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
 
 	rq->ix = ix;
+        rq->sched_group_ix = 0;
 
 	/* make sure that the "extra" id corresponds to the schedulers
 	 * id if the esdp->no <-> ix+1 mapping change.
@@ -6329,7 +6361,8 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 	    erts_alloc_permanent_cache_aligned(
 		ERTS_ALC_T_SCHDLR_DATA,
 		dirty_scheds * sizeof(ErtsAlignedDirtyShadowProcess));
-						   
+        const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(0);
+
 	erts_aligned_dirty_cpu_scheduler_data =
 	    erts_alloc_permanent_cache_aligned(
 		ERTS_ALC_T_SCHDLR_DATA,
@@ -6341,13 +6374,13 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
 	for (ix = 0; ix < no_dirty_cpu_schedulers; ix++) {
 	    ErtsSchedulerData *esdp = ERTS_DIRTY_CPU_SCHEDULER_IX(ix);
 	    init_scheduler_data(esdp, ix+1, ERTS_DIRTY_CPU_SCHED_SLEEP_INFO_IX(ix),
-				ERTS_DIRTY_CPU_RUNQ, NULL, 0,
+                                ERTS_DIRTY_CPU_RUNQ(esgp), NULL, 0,
 				&adsp[adspix++].dsp, ts);
 	}
 	for (ix = 0; ix < no_dirty_io_schedulers; ix++) {
 	    ErtsSchedulerData *esdp = ERTS_DIRTY_IO_SCHEDULER_IX(ix);
 	    init_scheduler_data(esdp, ix+1, ERTS_DIRTY_IO_SCHED_SLEEP_INFO_IX(ix),
-				ERTS_DIRTY_IO_RUNQ, NULL, 0,
+                                ERTS_DIRTY_IO_RUNQ(esgp), NULL, 0,
                                 &adsp[adspix++].dsp, ts);
 	}
     }
@@ -6687,7 +6720,7 @@ select_enqueue_run_queue(int enqueue, int enq_prio, Process *p, erts_aint32_t st
 
 	if (fin_dirty_enq_s_change(p, enqueue > 0, enq_prio,
 				   ERTS_PXSFLGS_IN_CPU_PRQ_MASK_OFFSET))
-	    return ERTS_DIRTY_CPU_RUNQ;
+            return ERTS_DIRTY_CPU_RUNQ(ERTS_SCHEDULING_GROUP_FOR_PROC(p));
 
 	return NULL;
 
@@ -6697,7 +6730,7 @@ select_enqueue_run_queue(int enqueue, int enq_prio, Process *p, erts_aint32_t st
 
 	if (fin_dirty_enq_s_change(p, enqueue > 0, enq_prio,
 				   ERTS_PXSFLGS_IN_IO_PRQ_MASK_OFFSET))
-	    return ERTS_DIRTY_IO_RUNQ;
+            return ERTS_DIRTY_IO_RUNQ(ERTS_SCHEDULING_GROUP_FOR_PROC(p));
 
 	return NULL;
 
@@ -7562,10 +7595,10 @@ schdlr_sspnd_resume_procs(ErtsSchedType sched_type,
 
 
 static ERTS_INLINE int
-have_dirty_work(void)
+have_dirty_work(const ErtsSchedulingGroup *esgp)
 {
-    return !(ERTS_EMPTY_RUNQ(ERTS_DIRTY_CPU_RUNQ)
-             || ERTS_EMPTY_RUNQ(ERTS_DIRTY_IO_RUNQ));
+    return !(ERTS_EMPTY_RUNQ(ERTS_DIRTY_CPU_RUNQ(esgp))
+             || ERTS_EMPTY_RUNQ(ERTS_DIRTY_IO_RUNQ(esgp)));
 }
 
 #define ERTS_MSB_NONE_PRIO_BIT PORT_BIT
@@ -7599,7 +7632,7 @@ msb_runq_prio_bit(Uint32 flgs)
 }
 
 static ERTS_INLINE void
-msb_runq_prio_bits(Uint32 *nrmlp, Uint32 *dcpup, Uint32 *diop)
+msb_runq_prio_bits(const ErtsSchedulingGroup *esgp, Uint32 *nrmlp, Uint32 *dcpup, Uint32 *diop)
 {
     Uint32 flgs = ERTS_RUNQ_FLGS_GET(ERTS_RUNQ_IX(0));
     if (flgs & ERTS_RUNQ_FLG_HALTING) {
@@ -7615,10 +7648,10 @@ msb_runq_prio_bits(Uint32 *nrmlp, Uint32 *dcpup, Uint32 *diop)
     else {
         *nrmlp = msb_runq_prio_bit(flgs);
 
-        flgs = ERTS_RUNQ_FLGS_GET(ERTS_DIRTY_CPU_RUNQ);
+        flgs = ERTS_RUNQ_FLGS_GET(ERTS_DIRTY_CPU_RUNQ(esgp));
         *dcpup = msb_runq_prio_bit(flgs);
 
-        flgs = ERTS_RUNQ_FLGS_GET(ERTS_DIRTY_IO_RUNQ);
+        flgs = ERTS_RUNQ_FLGS_GET(ERTS_DIRTY_IO_RUNQ(esgp));
         *diop = msb_runq_prio_bit(flgs);
     }
 }
@@ -7632,6 +7665,7 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
     ErtsSchedType exec_type;
     ErtsRunQueue *exec_rq;
     erts_aint32_t dbg_val;
+    const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_FOR_SCHEDULER(esdp);
     ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp);
     ErtsSchedSuspend *schdlr_sspnd = &sched_group_data->schdlr_sspnd;
 
@@ -7653,7 +7687,7 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
      * make sure we check for I/O...
      */
 
-    msb_runq_prio_bits(&nrml_prio, &dcpu_prio, &dio_prio);
+    msb_runq_prio_bits(esgp, &nrml_prio, &dcpu_prio, &dio_prio);
 
     exec_type = ERTS_SCHED_NORMAL;
     if (sched_type == ERTS_SCHED_NORMAL) {
@@ -7760,10 +7794,10 @@ msb_scheduler_type_switch(ErtsSchedType sched_type,
         exec_rq = ERTS_RUNQ_IX(0);
         break;
     case ERTS_SCHED_DIRTY_CPU:
-        exec_rq = ERTS_DIRTY_CPU_RUNQ;
+        exec_rq = ERTS_DIRTY_CPU_RUNQ(esgp);
         break;
     case ERTS_SCHED_DIRTY_IO:
-        exec_rq = ERTS_DIRTY_IO_RUNQ;
+        exec_rq = ERTS_DIRTY_IO_RUNQ(esgp);
         break;
     default:
         ERTS_INTERNAL_ERROR("Invalid scheduler type");
@@ -9982,7 +10016,7 @@ Process *erts_schedule(ErtsSchedulerData *esdp, Process *p, int calls)
                         || ((((flags & (ERTS_RUNQ_FLG_HALTING
                                        | ERTS_RUNQ_FLG_MSB_EXEC))
                               == ERTS_RUNQ_FLG_MSB_EXEC))
-                            && have_dirty_work())
+                            && have_dirty_work(ERTS_SCHEDULING_GROUP_FOR_SCHEDULER(esdp)))
                         ) {
                         non_empty_runq(rq);
                         flags |= ERTS_RUNQ_FLG_NONEMPTY;
@@ -15308,8 +15342,11 @@ void erts_halt(int code, ErtsMonotonicTime htmo)
         if (tmo >= 0)
             erts_start_timer_callback(tmo, erts_halt_flush_timeout_callback, NULL);
         notify_reap_ports_relb();
-        ERTS_RUNQ_FLGS_SET(ERTS_DIRTY_CPU_RUNQ, ERTS_RUNQ_FLG_HALTING);
-        ERTS_RUNQ_FLGS_SET(ERTS_DIRTY_IO_RUNQ, ERTS_RUNQ_FLG_HALTING);
+        for(int ix=0; ix < erts_no_scheduling_groups; ix++) {
+            const ErtsSchedulingGroup *esgp = ERTS_SCHEDULING_GROUP_IX(ix);
+            ERTS_RUNQ_FLGS_SET(ERTS_DIRTY_CPU_RUNQ(esgp), ERTS_RUNQ_FLG_HALTING);
+            ERTS_RUNQ_FLGS_SET(ERTS_DIRTY_IO_RUNQ(esgp), ERTS_RUNQ_FLG_HALTING);
+        }
 	erts_halt_code = code;
         erts_nif_notify_halt();
     }
