@@ -995,6 +995,24 @@ behavior of earlier flags.
   You can use `m:msacc` in order to see the current load of the dirty IO
   schedulers threads and adjust the number used accordingly.
 
+- **`+SG GroupName`{: #+SG }** - Adds a scheduling group, or selects an existing
+  group for subsequent `+S`, `+SP`, `+SDcpu`, `+SDPcpu`, and `+SDio` options.
+  These options initially apply to the `default` scheduling group.
+  Their maximum scheduler counts apply to the totals across all groups.
+
+  For example, `+S8 +SG my_group +S4:4 +SG default +S:2` creates `my_group`
+  with four schedulers, all online, and configures the `default` group with
+  eight schedulers, two online.
+
+  Configured logical processors are divided evenly among groups without an
+  explicit scheduler count. Available logical processors are divided the same
+  way for online schedulers. Explicit counts are first removed from the
+  available pool, and percentage options apply after the pool is divided. For
+  example, on a system with 30 configured and available logical processors,
+  `+SG g2 +S-1 +SG g3 +SP50` assigns 10 schedulers to `default`, nine to `g2`,
+  and five to `g3`. Appending `+SG default +S20` assigns 20, four, and two
+  schedulers, respectively. The same rules apply to dirty CPU schedulers.
+
 - **`+sFlag Value`** - Scheduling specific flags.
 
   - **`+sbt BindType`{: #+sbt }** - Sets scheduler bind type.
