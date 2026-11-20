@@ -178,9 +178,22 @@ typedef struct {
 } ErtsMigrationPathsAlloc;
 
 typedef struct {
+    union {
+        erts_atomic32_t active;
+        char align__[ERTS_CACHE_LINE_SIZE];
+    } cpu;
+    union {
+        erts_atomic32_t active;
+        char align__[ERTS_CACHE_LINE_SIZE];
+    } io;
+} ErtsDirtyCount;
+
+typedef struct {
     ErtsSchedSuspend schdlr_sspnd;
     ErtsRunQueuesBalanceInfo balance_info;
     ErtsMigrationPathsAlloc mpaths;
+
+    ErtsDirtyCount dirty_count erts_align_attribute(ERTS_CACHE_LINE_SIZE);
 } ErtsSchedulingGroupData;
 
 static ErtsSchedulingGroupData scheduling_globals;
@@ -381,29 +394,19 @@ ErtsAlignedRunQueue * ERTS_WRITE_UNLIKELY(erts_aligned_run_queues);
 Uint ERTS_WRITE_UNLIKELY(erts_no_run_queues);
 
 
-struct {
-    union {
-        erts_atomic32_t active;
-        char align__[ERTS_CACHE_LINE_SIZE];
-    } cpu;
-    union {
-        erts_atomic32_t active;
-        char align__[ERTS_CACHE_LINE_SIZE];
-    } io;
-} dirty_count erts_align_attribute(ERTS_CACHE_LINE_SIZE);
-
-
 static ERTS_INLINE void
 dirty_active(ErtsSchedulerData *esdp, erts_aint32_t add)
 {
     erts_aint32_t val;
     erts_atomic32_t *ap;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_SCHEDULER(esdp);
+
     switch (esdp->type) {
     case ERTS_SCHED_DIRTY_CPU:
-        ap = &dirty_count.cpu.active;
+        ap = &sched_group_data->dirty_count.cpu.active;
         break;
     case ERTS_SCHED_DIRTY_IO:
-        ap = &dirty_count.io.active;
+        ap = &sched_group_data->dirty_count.io.active;
         break;
     default:
         ap = NULL;
@@ -6471,9 +6474,9 @@ erts_init_scheduling(int no_schedulers, int no_schedulers_online, int no_poll_th
                                  ERTS_SCHED_DIRTY_IO,
                                  no_dirty_io_schedulers);
 
-        erts_atomic32_init_nob(&dirty_count.cpu.active,
+        erts_atomic32_init_nob(&sched_group_data->dirty_count.cpu.active,
                                (erts_aint32_t) no_dirty_cpu_schedulers);
-        erts_atomic32_init_nob(&dirty_count.io.active,
+        erts_atomic32_init_nob(&sched_group_data->dirty_count.io.active,
                                (erts_aint32_t) no_dirty_io_schedulers);
 
 
@@ -9333,6 +9336,7 @@ static ERTS_INLINE void
 run_queues_len_aux(ErtsRunQueue *rq, Uint *tot_len, Uint *qlen, int *ip, int incl_active_sched, int locked)
 {
     Sint rq_len;
+    ErtsSchedulingGroupData *sched_group_data = SCHEDULING_GROUP_DATA_FOR_RUNQ(rq);
 
     if (locked)
         rq_len = (Sint) erts_atomic32_read_dirty(&rq->len);
@@ -9344,13 +9348,13 @@ run_queues_len_aux(ErtsRunQueue *rq, Uint *tot_len, Uint *qlen, int *ip, int inc
         if (ERTS_RUNQ_IX_IS_DIRTY(rq->ix)) {
             erts_aint32_t dcnt;
             if (ERTS_RUNQ_IS_DIRTY_CPU_RUNQ(rq)) {
-                dcnt = erts_atomic32_read_nob(&dirty_count.cpu.active);
-                ASSERT(0 <= dcnt && dcnt <= erts_no_dirty_cpu_schedulers);
+                dcnt = erts_atomic32_read_nob(&sched_group_data->dirty_count.cpu.active);
+                ASSERT(0 <= dcnt && dcnt <= ERTS_SCHEDULING_GROUP_FOR_RUNQ(rq)->no_dirty_cpu_schedulers);
             }
             else {
                 ASSERT(ERTS_RUNQ_IS_DIRTY_IO_RUNQ(rq));
-                dcnt = erts_atomic32_read_nob(&dirty_count.io.active);
-                ASSERT(0 <= dcnt && dcnt <= erts_no_dirty_io_schedulers);
+                dcnt = erts_atomic32_read_nob(&sched_group_data->dirty_count.io.active);
+                ASSERT(0 <= dcnt && dcnt <= ERTS_SCHEDULING_GROUP_FOR_RUNQ(rq)->no_dirty_io_schedulers);
             }
             rq_len += (Sint) dcnt;
         }
